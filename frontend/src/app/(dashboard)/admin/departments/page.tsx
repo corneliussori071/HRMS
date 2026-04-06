@@ -15,14 +15,14 @@ type DeptTab = "shifts" | "categories" | "ranks";
 export default function DepartmentsPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedDept, setExpandedDept] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<DeptTab>("shifts");
+  const [selectedDept, setSelectedDept] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<DeptTab>("categories");
 
   // Per-department data
   const [shifts, setShifts] = useState<Record<string, Shift[]>>({});
   const [categories, setCategories] = useState<Record<string, StaffingCategory[]>>({});
   const [ranks, setRanks] = useState<Record<string, Rank[]>>({});
-  const [loadingSub, setLoadingSub] = useState<string | null>(null);
+  const [loadingSub, setLoadingSub] = useState(false);
 
   // Department form
   const [showDeptModal, setShowDeptModal] = useState(false);
@@ -34,7 +34,6 @@ export default function DepartmentsPage() {
 
   // Shift form
   const [showShiftModal, setShowShiftModal] = useState(false);
-  const [shiftDeptId, setShiftDeptId] = useState("");
   const [editShift, setEditShift] = useState<Shift | null>(null);
   const [shiftName, setShiftName] = useState("");
   const [shiftStart, setShiftStart] = useState("");
@@ -44,7 +43,6 @@ export default function DepartmentsPage() {
 
   // Category form
   const [showCatModal, setShowCatModal] = useState(false);
-  const [catDeptId, setCatDeptId] = useState("");
   const [editCat, setEditCat] = useState<StaffingCategory | null>(null);
   const [catName, setCatName] = useState("");
   const [catDesc, setCatDesc] = useState("");
@@ -53,7 +51,6 @@ export default function DepartmentsPage() {
 
   // Rank form
   const [showRankModal, setShowRankModal] = useState(false);
-  const [rankDeptId, setRankDeptId] = useState("");
   const [editRank, setEditRank] = useState<Rank | null>(null);
   const [rankName, setRankName] = useState("");
   const [rankLevel, setRankLevel] = useState("0");
@@ -61,50 +58,46 @@ export default function DepartmentsPage() {
   const [rankSaving, setRankSaving] = useState(false);
   const [rankError, setRankError] = useState("");
 
+  // Confirm delete
+  const [confirmDeleteDept, setConfirmDeleteDept] = useState<string | null>(null);
+
+  async function fetchAllSubData(deptId: string) {
+    setLoadingSub(true);
+    const [shiftsRes, catsRes, ranksRes] = await Promise.all([
+      fetch(`/api/shifts?department_id=${deptId}`).then((r) => r.json()),
+      fetch(`/api/staffing-categories?department_id=${deptId}`).then((r) => r.json()),
+      fetch(`/api/ranks?department_id=${deptId}`).then((r) => r.json()),
+    ]);
+    if (shiftsRes.data) setShifts((p) => ({ ...p, [deptId]: shiftsRes.data }));
+    if (catsRes.data) setCategories((p) => ({ ...p, [deptId]: catsRes.data }));
+    if (ranksRes.data) setRanks((p) => ({ ...p, [deptId]: ranksRes.data }));
+    setLoadingSub(false);
+  }
+
   const fetchDepartments = useCallback(async () => {
     const res = await fetch("/api/departments");
     const json = await res.json();
-    if (json.data) setDepartments(json.data);
+    if (json.data) {
+      setDepartments(json.data);
+      if (json.data.length > 0 && !selectedDept) {
+        const firstId = json.data[0].id;
+        setSelectedDept(firstId);
+        fetchAllSubData(firstId);
+      }
+    }
     setLoading(false);
-  }, []);
+  }, [selectedDept]);
 
   useEffect(() => {
     fetchDepartments();
   }, [fetchDepartments]);
 
-  async function fetchSubData(deptId: string, tab: DeptTab) {
-    setLoadingSub(deptId);
-    if (tab === "shifts" && !shifts[deptId]) {
-      const res = await fetch(`/api/shifts?department_id=${deptId}`);
-      const json = await res.json();
-      if (json.data) setShifts((p) => ({ ...p, [deptId]: json.data }));
+  function selectDept(deptId: string) {
+    setSelectedDept(deptId);
+    setActiveTab("categories");
+    if (!categories[deptId] && !shifts[deptId] && !ranks[deptId]) {
+      fetchAllSubData(deptId);
     }
-    if (tab === "categories" && !categories[deptId]) {
-      const res = await fetch(`/api/staffing-categories?department_id=${deptId}`);
-      const json = await res.json();
-      if (json.data) setCategories((p) => ({ ...p, [deptId]: json.data }));
-    }
-    if (tab === "ranks" && !ranks[deptId]) {
-      const res = await fetch(`/api/ranks?department_id=${deptId}`);
-      const json = await res.json();
-      if (json.data) setRanks((p) => ({ ...p, [deptId]: json.data }));
-    }
-    setLoadingSub(null);
-  }
-
-  function toggleExpand(deptId: string) {
-    if (expandedDept === deptId) {
-      setExpandedDept(null);
-    } else {
-      setExpandedDept(deptId);
-      setActiveTab("shifts");
-      fetchSubData(deptId, "shifts");
-    }
-  }
-
-  function switchTab(tab: DeptTab) {
-    setActiveTab(tab);
-    if (expandedDept) fetchSubData(expandedDept, tab);
   }
 
   // ---------- Department CRUD ----------
@@ -147,18 +140,18 @@ export default function DepartmentsPage() {
   }
 
   async function handleDeleteDept(id: string) {
-    if (!confirm("Delete this department and all its shifts, categories, and ranks?")) return;
     const res = await fetch(`/api/departments/${id}`, { method: "DELETE" });
     if (res.ok) {
+      setConfirmDeleteDept(null);
+      if (selectedDept === id) setSelectedDept(null);
       await fetchDepartments();
-      if (expandedDept === id) setExpandedDept(null);
     }
   }
 
   // ---------- Shift CRUD ----------
-  function openAddShift(deptId: string) {
+  function openAddShift() {
+    if (!selectedDept) return;
     setEditShift(null);
-    setShiftDeptId(deptId);
     setShiftName("");
     setShiftStart("");
     setShiftEnd("");
@@ -168,7 +161,6 @@ export default function DepartmentsPage() {
 
   function openEditShift(shift: Shift) {
     setEditShift(shift);
-    setShiftDeptId(shift.department_id);
     setShiftName(shift.name);
     setShiftStart(shift.start_time.slice(0, 5));
     setShiftEnd(shift.end_time.slice(0, 5));
@@ -178,12 +170,13 @@ export default function DepartmentsPage() {
 
   async function handleSaveShift(e: React.FormEvent) {
     e.preventDefault();
+    if (!selectedDept) return;
     setShiftSaving(true);
     setShiftError("");
     const url = editShift ? `/api/shifts/${editShift.id}` : "/api/shifts";
     const method = editShift ? "PUT" : "POST";
     const body: Record<string, unknown> = { name: shiftName, start_time: shiftStart, end_time: shiftEnd };
-    if (!editShift) body.department_id = shiftDeptId;
+    if (!editShift) body.department_id = selectedDept;
     const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) {
       const b = await res.json();
@@ -193,24 +186,24 @@ export default function DepartmentsPage() {
     }
     setShowShiftModal(false);
     setShiftSaving(false);
-    const r = await fetch(`/api/shifts?department_id=${shiftDeptId}`);
+    const r = await fetch(`/api/shifts?department_id=${selectedDept}`);
     const j = await r.json();
-    if (j.data) setShifts((p) => ({ ...p, [shiftDeptId]: j.data }));
+    if (j.data) setShifts((p) => ({ ...p, [selectedDept]: j.data }));
   }
 
   async function handleDeleteShift(shift: Shift) {
     const res = await fetch(`/api/shifts/${shift.id}`, { method: "DELETE" });
-    if (res.ok) {
-      const r = await fetch(`/api/shifts?department_id=${shift.department_id}`);
+    if (res.ok && selectedDept) {
+      const r = await fetch(`/api/shifts?department_id=${selectedDept}`);
       const j = await r.json();
-      if (j.data) setShifts((p) => ({ ...p, [shift.department_id]: j.data }));
+      if (j.data) setShifts((p) => ({ ...p, [selectedDept]: j.data }));
     }
   }
 
   // ---------- Category CRUD ----------
-  function openAddCat(deptId: string) {
+  function openAddCat() {
+    if (!selectedDept) return;
     setEditCat(null);
-    setCatDeptId(deptId);
     setCatName("");
     setCatDesc("");
     setCatError("");
@@ -219,7 +212,6 @@ export default function DepartmentsPage() {
 
   function openEditCat(cat: StaffingCategory) {
     setEditCat(cat);
-    setCatDeptId(cat.department_id);
     setCatName(cat.name);
     setCatDesc(cat.description || "");
     setCatError("");
@@ -228,12 +220,13 @@ export default function DepartmentsPage() {
 
   async function handleSaveCat(e: React.FormEvent) {
     e.preventDefault();
+    if (!selectedDept) return;
     setCatSaving(true);
     setCatError("");
     const url = editCat ? `/api/staffing-categories/${editCat.id}` : "/api/staffing-categories";
     const method = editCat ? "PUT" : "POST";
     const body: Record<string, unknown> = { name: catName, description: catDesc || null };
-    if (!editCat) body.department_id = catDeptId;
+    if (!editCat) body.department_id = selectedDept;
     const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) {
       const b = await res.json();
@@ -243,24 +236,24 @@ export default function DepartmentsPage() {
     }
     setShowCatModal(false);
     setCatSaving(false);
-    const r = await fetch(`/api/staffing-categories?department_id=${catDeptId}`);
+    const r = await fetch(`/api/staffing-categories?department_id=${selectedDept}`);
     const j = await r.json();
-    if (j.data) setCategories((p) => ({ ...p, [catDeptId]: j.data }));
+    if (j.data) setCategories((p) => ({ ...p, [selectedDept]: j.data }));
   }
 
   async function handleDeleteCat(cat: StaffingCategory) {
     const res = await fetch(`/api/staffing-categories/${cat.id}`, { method: "DELETE" });
-    if (res.ok) {
-      const r = await fetch(`/api/staffing-categories?department_id=${cat.department_id}`);
+    if (res.ok && selectedDept) {
+      const r = await fetch(`/api/staffing-categories?department_id=${selectedDept}`);
       const j = await r.json();
-      if (j.data) setCategories((p) => ({ ...p, [cat.department_id]: j.data }));
+      if (j.data) setCategories((p) => ({ ...p, [selectedDept]: j.data }));
     }
   }
 
   // ---------- Rank CRUD ----------
-  function openAddRank(deptId: string) {
+  function openAddRank() {
+    if (!selectedDept) return;
     setEditRank(null);
-    setRankDeptId(deptId);
     setRankName("");
     setRankLevel("0");
     setRankDesc("");
@@ -270,7 +263,6 @@ export default function DepartmentsPage() {
 
   function openEditRank(rank: Rank) {
     setEditRank(rank);
-    setRankDeptId(rank.department_id);
     setRankName(rank.name);
     setRankLevel(String(rank.level));
     setRankDesc(rank.description || "");
@@ -280,12 +272,13 @@ export default function DepartmentsPage() {
 
   async function handleSaveRank(e: React.FormEvent) {
     e.preventDefault();
+    if (!selectedDept) return;
     setRankSaving(true);
     setRankError("");
     const url = editRank ? `/api/ranks/${editRank.id}` : "/api/ranks";
     const method = editRank ? "PUT" : "POST";
     const body: Record<string, unknown> = { name: rankName, level: parseInt(rankLevel, 10), description: rankDesc || null };
-    if (!editRank) body.department_id = rankDeptId;
+    if (!editRank) body.department_id = selectedDept;
     const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) {
       const b = await res.json();
@@ -295,114 +288,75 @@ export default function DepartmentsPage() {
     }
     setShowRankModal(false);
     setRankSaving(false);
-    const r = await fetch(`/api/ranks?department_id=${rankDeptId}`);
+    const r = await fetch(`/api/ranks?department_id=${selectedDept}`);
     const j = await r.json();
-    if (j.data) setRanks((p) => ({ ...p, [rankDeptId]: j.data }));
+    if (j.data) setRanks((p) => ({ ...p, [selectedDept]: j.data }));
   }
 
   async function handleDeleteRank(rank: Rank) {
     const res = await fetch(`/api/ranks/${rank.id}`, { method: "DELETE" });
-    if (res.ok) {
-      const r = await fetch(`/api/ranks?department_id=${rank.department_id}`);
+    if (res.ok && selectedDept) {
+      const r = await fetch(`/api/ranks?department_id=${selectedDept}`);
       const j = await r.json();
-      if (j.data) setRanks((p) => ({ ...p, [rank.department_id]: j.data }));
+      if (j.data) setRanks((p) => ({ ...p, [selectedDept]: j.data }));
     }
   }
 
-  // ---------- Tab content rendering ----------
+  // ---------- Tab definitions ----------
   const tabs: { key: DeptTab; label: string }[] = [
-    { key: "shifts", label: "Shifts" },
     { key: "categories", label: "Staffing Categories" },
     { key: "ranks", label: "Ranks" },
+    { key: "shifts", label: "Shifts" },
   ];
 
-  function renderTabContent(deptId: string) {
-    if (loadingSub === deptId) {
+  const activeDept = departments.find((d) => d.id === selectedDept);
+
+  function renderTabContent() {
+    if (!selectedDept) return null;
+
+    if (loadingSub) {
       return (
-        <div className="space-y-2">
+        <div className="space-y-2 p-4">
           <Skeleton className="h-8 w-full" />
           <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-3/4" />
         </div>
       );
     }
 
-    if (activeTab === "shifts") {
-      const items = shifts[deptId] || [];
-      return (
-        <>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-medium text-foreground">Shifts</h3>
-            <Button size="sm" variant="secondary" onClick={() => openAddShift(deptId)}>Add Shift</Button>
-          </div>
-          {items.length > 0 ? (
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-border">
-                <tr>
-                  <th className="pb-2 font-medium text-muted">Name</th>
-                  <th className="pb-2 font-medium text-muted">Start</th>
-                  <th className="pb-2 font-medium text-muted">End</th>
-                  <th className="pb-2 font-medium text-muted">Status</th>
-                  <th className="pb-2 font-medium text-muted">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((s) => (
-                  <tr key={s.id} className="border-b border-border last:border-0">
-                    <td className="py-2 text-foreground">{s.name}</td>
-                    <td className="py-2 text-foreground">{s.start_time.slice(0, 5)}</td>
-                    <td className="py-2 text-foreground">{s.end_time.slice(0, 5)}</td>
-                    <td className="py-2">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.is_active ? "bg-success/10 text-success" : "bg-muted/20 text-muted"}`}>
-                        {s.is_active ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td className="py-2">
-                      <div className="flex gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => openEditShift(s)}>Edit</Button>
-                        <Button size="sm" variant="ghost" onClick={() => handleDeleteShift(s)}>Delete</Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="text-sm text-muted">No shifts configured.</p>
-          )}
-        </>
-      );
-    }
-
     if (activeTab === "categories") {
-      const items = categories[deptId] || [];
+      const items = categories[selectedDept] || [];
       return (
-        <>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-medium text-foreground">Staffing Categories</h3>
-            <Button size="sm" variant="secondary" onClick={() => openAddCat(deptId)}>Add Category</Button>
+        <div className="p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Staffing Categories</h3>
+              <p className="text-xs text-muted">Define staff types for this department (e.g. Nurses, Doctors, Technicians)</p>
+            </div>
+            <Button size="sm" onClick={openAddCat}>Add Category</Button>
           </div>
           {items.length > 0 ? (
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-border">
-                <tr>
+              <thead>
+                <tr className="border-b border-border">
                   <th className="pb-2 font-medium text-muted">Name</th>
                   <th className="pb-2 font-medium text-muted">Description</th>
                   <th className="pb-2 font-medium text-muted">Status</th>
-                  <th className="pb-2 font-medium text-muted">Actions</th>
+                  <th className="pb-2 text-right font-medium text-muted">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((c) => (
                   <tr key={c.id} className="border-b border-border last:border-0">
-                    <td className="py-2 text-foreground">{c.name}</td>
-                    <td className="py-2 text-muted">{c.description || "\u2014"}</td>
-                    <td className="py-2">
+                    <td className="py-2.5 font-medium text-foreground">{c.name}</td>
+                    <td className="py-2.5 text-muted">{c.description || "\u2014"}</td>
+                    <td className="py-2.5">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${c.is_active ? "bg-success/10 text-success" : "bg-muted/20 text-muted"}`}>
                         {c.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
-                    <td className="py-2">
-                      <div className="flex gap-1">
+                    <td className="py-2.5 text-right">
+                      <div className="flex justify-end gap-1">
                         <Button size="sm" variant="ghost" onClick={() => openEditCat(c)}>Edit</Button>
                         <Button size="sm" variant="ghost" onClick={() => handleDeleteCat(c)}>Delete</Button>
                       </div>
@@ -412,44 +366,50 @@ export default function DepartmentsPage() {
               </tbody>
             </table>
           ) : (
-            <p className="text-sm text-muted">No staffing categories configured.</p>
+            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+              <p className="text-sm text-muted">No staffing categories configured for this department.</p>
+              <p className="mt-1 text-xs text-muted">Add categories like Nurses, Doctors, or Technicians to organize staff.</p>
+            </div>
           )}
-        </>
+        </div>
       );
     }
 
     if (activeTab === "ranks") {
-      const items = ranks[deptId] || [];
+      const items = ranks[selectedDept] || [];
       return (
-        <>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-medium text-foreground">Ranks</h3>
-            <Button size="sm" variant="secondary" onClick={() => openAddRank(deptId)}>Add Rank</Button>
+        <div className="p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Ranks</h3>
+              <p className="text-xs text-muted">Define rank hierarchy for this department (e.g. Staff Nurse, Senior Staff Nurse)</p>
+            </div>
+            <Button size="sm" onClick={openAddRank}>Add Rank</Button>
           </div>
           {items.length > 0 ? (
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-border">
-                <tr>
-                  <th className="pb-2 font-medium text-muted">Name</th>
+              <thead>
+                <tr className="border-b border-border">
                   <th className="pb-2 font-medium text-muted">Level</th>
+                  <th className="pb-2 font-medium text-muted">Name</th>
                   <th className="pb-2 font-medium text-muted">Description</th>
                   <th className="pb-2 font-medium text-muted">Status</th>
-                  <th className="pb-2 font-medium text-muted">Actions</th>
+                  <th className="pb-2 text-right font-medium text-muted">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((r) => (
                   <tr key={r.id} className="border-b border-border last:border-0">
-                    <td className="py-2 text-foreground">{r.name}</td>
-                    <td className="py-2 text-foreground">{r.level}</td>
-                    <td className="py-2 text-muted">{r.description || "\u2014"}</td>
-                    <td className="py-2">
+                    <td className="py-2.5 text-foreground">{r.level}</td>
+                    <td className="py-2.5 font-medium text-foreground">{r.name}</td>
+                    <td className="py-2.5 text-muted">{r.description || "\u2014"}</td>
+                    <td className="py-2.5">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.is_active ? "bg-success/10 text-success" : "bg-muted/20 text-muted"}`}>
                         {r.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
-                    <td className="py-2">
-                      <div className="flex gap-1">
+                    <td className="py-2.5 text-right">
+                      <div className="flex justify-end gap-1">
                         <Button size="sm" variant="ghost" onClick={() => openEditRank(r)}>Edit</Button>
                         <Button size="sm" variant="ghost" onClick={() => handleDeleteRank(r)}>Delete</Button>
                       </div>
@@ -459,9 +419,64 @@ export default function DepartmentsPage() {
               </tbody>
             </table>
           ) : (
-            <p className="text-sm text-muted">No ranks configured.</p>
+            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+              <p className="text-sm text-muted">No ranks configured for this department.</p>
+              <p className="mt-1 text-xs text-muted">Add ranks like Staff Nurse, Senior Staff Nurse, or Nursing Officer.</p>
+            </div>
           )}
-        </>
+        </div>
+      );
+    }
+
+    if (activeTab === "shifts") {
+      const items = shifts[selectedDept] || [];
+      return (
+        <div className="p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Shifts</h3>
+              <p className="text-xs text-muted">Define work shifts for this department</p>
+            </div>
+            <Button size="sm" onClick={openAddShift}>Add Shift</Button>
+          </div>
+          {items.length > 0 ? (
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="pb-2 font-medium text-muted">Name</th>
+                  <th className="pb-2 font-medium text-muted">Start</th>
+                  <th className="pb-2 font-medium text-muted">End</th>
+                  <th className="pb-2 font-medium text-muted">Status</th>
+                  <th className="pb-2 text-right font-medium text-muted">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((s) => (
+                  <tr key={s.id} className="border-b border-border last:border-0">
+                    <td className="py-2.5 font-medium text-foreground">{s.name}</td>
+                    <td className="py-2.5 text-foreground">{s.start_time.slice(0, 5)}</td>
+                    <td className="py-2.5 text-foreground">{s.end_time.slice(0, 5)}</td>
+                    <td className="py-2.5">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.is_active ? "bg-success/10 text-success" : "bg-muted/20 text-muted"}`}>
+                        {s.is_active ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+                    <td className="py-2.5 text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => openEditShift(s)}>Edit</Button>
+                        <Button size="sm" variant="ghost" onClick={() => handleDeleteShift(s)}>Delete</Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+              <p className="text-sm text-muted">No shifts configured for this department.</p>
+            </div>
+          )}
+        </div>
       );
     }
 
@@ -471,58 +486,112 @@ export default function DepartmentsPage() {
   return (
     <MainContent
       title="Departments"
-      description="Manage departments, shifts, staffing categories, and ranks."
+      description="Manage departments and configure staffing categories, ranks, and shifts for each."
       actions={<Button size="sm" onClick={openAddDept}>Add Department</Button>}
     >
-      <div className="space-y-4">
-        {loading ? (
-          Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="rounded-lg border border-border p-4">
-              <Skeleton className="h-6 w-48" />
-              <Skeleton className="mt-2 h-4 w-72" />
+      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+        {/* Department list sidebar */}
+        <div className="space-y-1">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted">Departments</p>
+          {loading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-14 w-full rounded-lg" />
+              ))}
             </div>
-          ))
-        ) : departments.length > 0 ? (
-          departments.map((dept) => (
-            <div key={dept.id} className="rounded-lg border border-border">
-              <div className="flex items-center justify-between px-4 py-3">
-                <button type="button" className="flex-1 text-left" onClick={() => toggleExpand(dept.id)}>
-                  <p className="text-sm font-semibold text-foreground">{dept.name}</p>
-                  {dept.description && <p className="text-xs text-muted">{dept.description}</p>}
+          ) : departments.length > 0 ? (
+            departments.map((dept) => (
+              <div key={dept.id} className="group relative">
+                <button
+                  type="button"
+                  onClick={() => selectDept(dept.id)}
+                  className={`w-full rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                    selectedDept === dept.id
+                      ? "border-primary bg-primary/5"
+                      : "border-transparent hover:border-border hover:bg-surface"
+                  }`}
+                >
+                  <p className={`text-sm font-medium ${selectedDept === dept.id ? "text-primary" : "text-foreground"}`}>
+                    {dept.name}
+                  </p>
+                  {dept.description && (
+                    <p className="mt-0.5 text-xs text-muted line-clamp-1">{dept.description}</p>
+                  )}
+                  <div className="mt-1 flex gap-3 text-xs text-muted">
+                    <span>{(categories[dept.id] || []).length} categories</span>
+                    <span>{(ranks[dept.id] || []).length} ranks</span>
+                    <span>{(shifts[dept.id] || []).length} shifts</span>
+                  </div>
                 </button>
-                <div className="flex items-center gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openEditDept(dept)}>Edit</Button>
-                  <Button size="sm" variant="destructive" onClick={() => handleDeleteDept(dept.id)}>Delete</Button>
+                <div className="absolute right-2 top-2 hidden gap-1 group-hover:flex">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); openEditDept(dept); }}
+                    className="rounded px-1.5 py-0.5 text-xs text-muted hover:bg-surface hover:text-foreground"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteDept(dept.id); }}
+                    className="rounded px-1.5 py-0.5 text-xs text-muted hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
-              {expandedDept === dept.id && (
-                <div className="border-t border-border bg-surface px-4 py-3">
-                  <div className="mb-4 flex gap-1 border-b border-border">
-                    {tabs.map((t) => (
-                      <button
-                        key={t.key}
-                        type="button"
-                        onClick={() => switchTab(t.key)}
-                        className={`px-3 py-2 text-sm font-medium transition-colors ${
-                          activeTab === t.key
-                            ? "border-b-2 border-primary text-primary"
-                            : "text-muted hover:text-foreground"
-                        }`}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-                  {renderTabContent(dept.id)}
-                </div>
-              )}
+            ))
+          ) : (
+            <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center">
+              <p className="text-sm text-muted">No departments yet.</p>
+              <Button size="sm" variant="secondary" className="mt-2" onClick={openAddDept}>
+                Create First Department
+              </Button>
             </div>
-          ))
-        ) : (
-          <div className="rounded-lg border border-border px-4 py-8 text-center text-sm text-muted">
-            No departments created yet.
-          </div>
-        )}
+          )}
+        </div>
+
+        {/* Detail panel */}
+        <div className="rounded-lg border border-border">
+          {selectedDept && activeDept ? (
+            <>
+              <div className="border-b border-border px-4 py-3">
+                <h2 className="text-sm font-semibold text-foreground">{activeDept.name}</h2>
+                {activeDept.description && (
+                  <p className="text-xs text-muted">{activeDept.description}</p>
+                )}
+              </div>
+              <div className="flex border-b border-border">
+                {tabs.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setActiveTab(t.key)}
+                    className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+                      activeTab === t.key
+                        ? "border-b-2 border-primary text-primary"
+                        : "text-muted hover:text-foreground"
+                    }`}
+                  >
+                    {t.label}
+                    <span className="ml-1.5 text-xs">
+                      {t.key === "categories" && `(${(categories[selectedDept] || []).length})`}
+                      {t.key === "ranks" && `(${(ranks[selectedDept] || []).length})`}
+                      {t.key === "shifts" && `(${(shifts[selectedDept] || []).length})`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {renderTabContent()}
+            </>
+          ) : (
+            <div className="flex items-center justify-center px-4 py-16">
+              <p className="text-sm text-muted">
+                {loading ? "Loading..." : departments.length > 0 ? "Select a department to configure." : "Create a department to get started."}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Department Modal */}
@@ -536,6 +605,17 @@ export default function DepartmentsPage() {
             <Button type="submit" disabled={deptSaving}>{deptSaving ? "Saving..." : "Save"}</Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Confirm Delete Department */}
+      <Modal isOpen={confirmDeleteDept !== null} onClose={() => setConfirmDeleteDept(null)} title="Delete Department">
+        <p className="text-sm text-foreground">
+          This will permanently delete this department and all its shifts, staffing categories, and ranks. This action cannot be undone.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setConfirmDeleteDept(null)}>Cancel</Button>
+          <Button variant="destructive" onClick={() => confirmDeleteDept && handleDeleteDept(confirmDeleteDept)}>Delete</Button>
+        </div>
       </Modal>
 
       {/* Shift Modal */}
