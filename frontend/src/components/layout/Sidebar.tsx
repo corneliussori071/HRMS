@@ -16,7 +16,7 @@ export default function Sidebar({ navItems }: SidebarProps) {
   }
 
   return (
-    <aside className="hidden w-56 shrink-0 border-r border-border bg-background lg:block">
+    <aside className="hidden w-56 shrink-0 border-r border-border bg-background md:block">
       <nav className="flex flex-col gap-1 p-4">
         {navItems.map((item) => (
           <Link
