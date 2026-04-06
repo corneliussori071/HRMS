@@ -18,7 +18,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("leave_types")
-    .select("id, name, description, system_type, max_days_per_year, is_active, requires_approval, created_at, updated_at")
+    .select("id, name, description, system_type, department_id, max_days_per_year, is_active, requires_approval, created_at, updated_at")
     .order("name", { ascending: true });
 
   if (error) return errorResponse("Failed to fetch leave types", 500);
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   const { data, error } = await supabase
     .from("leave_types")
     .insert(parsed.data)
-    .select("id, name, description, system_type, max_days_per_year, is_active, requires_approval, created_at, updated_at")
+    .select("id, name, description, system_type, department_id, max_days_per_year, is_active, requires_approval, created_at, updated_at")
     .single();
 
   if (error) {

@@ -22,11 +22,14 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from("leave_allocations")
-    .select("id, leave_type_id, role, days_per_year, created_at, updated_at")
+    .select("id, leave_type_id, role, rank_id, days_per_year, hours_worked, hours_earned, created_at, updated_at")
     .order("role", { ascending: true });
 
   if (leaveTypeId) query = query.eq("leave_type_id", leaveTypeId);
   if (role) query = query.eq("role", role);
+
+  const rankId = searchParams.get("rank_id");
+  if (rankId) query = query.eq("rank_id", rankId);
 
   const { data, error } = await query;
 
@@ -46,10 +49,12 @@ export async function POST(request: NextRequest) {
 
   const supabase = await createClient();
 
+  const upsertConflict = parsed.data.rank_id ? "leave_type_id,rank_id" : "leave_type_id,role";
+
   const { data, error } = await supabase
     .from("leave_allocations")
-    .upsert(parsed.data, { onConflict: "leave_type_id,role" })
-    .select("id, leave_type_id, role, days_per_year, created_at, updated_at")
+    .upsert(parsed.data, { onConflict: upsertConflict })
+    .select("id, leave_type_id, role, rank_id, days_per_year, hours_worked, hours_earned, created_at, updated_at")
     .single();
 
   if (error) return errorResponse("Failed to save leave allocation", 500);

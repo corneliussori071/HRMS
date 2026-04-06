@@ -35,7 +35,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     .from("leave_allocations")
     .update(parsed.data)
     .eq("id", id)
-    .select("id, leave_type_id, role, days_per_year, created_at, updated_at")
+    .select("id, leave_type_id, role, rank_id, days_per_year, hours_worked, hours_earned, created_at, updated_at")
     .single();
 
   if (error) return errorResponse("Failed to update leave allocation", 500);

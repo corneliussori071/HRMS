@@ -91,8 +91,8 @@ export default function UsersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // Action menu
-  const [actionMenuId, setActionMenuId] = useState<string | null>(null);
+  // Action modal
+  const [actionUser, setActionUser] = useState<UserRow | null>(null);
 
   // Add/Edit form fields
   const [formName, setFormName] = useState("");
@@ -159,13 +159,6 @@ export default function UsersPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  // Close action menu on outside click
-  useEffect(() => {
-    function handleClick() { setActionMenuId(null); }
-    if (actionMenuId) document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
-  }, [actionMenuId]);
 
   const isAdmin = currentUserRole === "admin" || currentUserRole === "hr";
 
@@ -542,38 +535,13 @@ export default function UsersPage() {
                   </td>
                   {isAdmin && (
                     <td className="px-4 py-3">
-                      <div className="relative">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={(e) => { e.stopPropagation(); setActionMenuId(actionMenuId === u.id ? null : u.id); }}
-                        >
-                          Actions
-                        </Button>
-                        {actionMenuId === u.id && (
-                          <div className="absolute right-0 z-10 mt-1 w-48 rounded-lg border border-border bg-background shadow-lg">
-                            <button type="button" className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-surface" onClick={() => { setActionMenuId(null); openDetails(u); }}>
-                              View Details
-                            </button>
-                            <button type="button" className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-surface" onClick={() => { setActionMenuId(null); openEdit(u); }}>
-                              Edit
-                            </button>
-                            <button type="button" className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-surface" onClick={() => { setActionMenuId(null); openCredentials(u); }}>
-                              Update Credentials
-                            </button>
-                            {u.id !== currentUserId && (
-                              <>
-                                <button type="button" className="w-full px-4 py-2 text-left text-sm text-warning hover:bg-surface" onClick={() => { setActionMenuId(null); handleSuspend(u); }}>
-                                  {u.status === "suspended" ? "Reactivate" : "Suspend"}
-                                </button>
-                                <button type="button" className="w-full px-4 py-2 text-left text-sm text-destructive hover:bg-surface" onClick={() => { setActionMenuId(null); handleDelete(u); }}>
-                                  Delete
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setActionUser(u)}
+                      >
+                        Actions
+                      </Button>
                     </td>
                   )}
                 </tr>
@@ -676,6 +644,34 @@ export default function UsersPage() {
           </div>
         ) : (
           <p className="text-sm text-muted">Failed to load user details.</p>
+        )}
+      </Modal>
+
+      {/* Action Modal */}
+      <Modal isOpen={actionUser !== null} onClose={() => setActionUser(null)} title={`Actions: ${actionUser?.full_name || ""}`}>
+        {actionUser && (
+          <div className="space-y-1">
+            <button type="button" className="w-full rounded-md px-4 py-2.5 text-left text-sm font-medium text-foreground hover:bg-surface" onClick={() => { const u = actionUser; setActionUser(null); openDetails(u); }}>
+              View Details
+            </button>
+            <button type="button" className="w-full rounded-md px-4 py-2.5 text-left text-sm font-medium text-foreground hover:bg-surface" onClick={() => { const u = actionUser; setActionUser(null); openEdit(u); }}>
+              Edit
+            </button>
+            <button type="button" className="w-full rounded-md px-4 py-2.5 text-left text-sm font-medium text-foreground hover:bg-surface" onClick={() => { const u = actionUser; setActionUser(null); openCredentials(u); }}>
+              Update Credentials
+            </button>
+            {actionUser.id !== currentUserId && (
+              <>
+                <div className="border-t border-border" />
+                <button type="button" className="w-full rounded-md px-4 py-2.5 text-left text-sm font-medium text-warning hover:bg-surface" onClick={() => { const u = actionUser; setActionUser(null); handleSuspend(u); }}>
+                  {actionUser.status === "suspended" ? "Reactivate" : "Suspend"}
+                </button>
+                <button type="button" className="w-full rounded-md px-4 py-2.5 text-left text-sm font-medium text-destructive hover:bg-surface" onClick={() => { const u = actionUser; setActionUser(null); handleDelete(u); }}>
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
         )}
       </Modal>
 

@@ -35,7 +35,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     .from("leave_types")
     .update(parsed.data)
     .eq("id", id)
-    .select("id, name, description, system_type, max_days_per_year, is_active, requires_approval, created_at, updated_at")
+    .select("id, name, description, system_type, department_id, max_days_per_year, is_active, requires_approval, created_at, updated_at")
     .single();
 
   if (error) {

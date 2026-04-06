@@ -5,6 +5,7 @@ export interface LeaveType {
   name: string;
   description: string | null;
   system_type: "pto" | "fixed";
+  department_id: string | null;
   max_days_per_year: number;
   is_active: boolean;
   requires_approval: boolean;
@@ -15,8 +16,11 @@ export interface LeaveType {
 export interface LeaveAllocation {
   id: string;
   leave_type_id: string;
-  role: string;
+  role: string | null;
+  rank_id: string | null;
   days_per_year: number;
+  hours_worked: number;
+  hours_earned: number;
   created_at: string;
   updated_at: string;
 }
