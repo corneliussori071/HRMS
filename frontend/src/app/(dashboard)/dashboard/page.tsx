@@ -1,7 +1,72 @@
+import { createClient } from "@/lib/supabase/server";
 import MainContent from "@/components/layout/MainContent";
-import Skeleton from "@/components/ui/Skeleton";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const today = new Date().toISOString().split("T")[0];
+
+  const [
+    attendanceResult,
+    pendingLeavesResult,
+    pendingOvertimeResult,
+    recentLeavesResult,
+    recentAttendanceResult,
+  ] = await Promise.all([
+    supabase
+      .from("attendance")
+      .select("status")
+      .eq("user_id", user!.id)
+      .eq("date", today)
+      .maybeSingle(),
+    supabase
+      .from("leave_requests")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "pending"),
+    supabase
+      .from("overtime")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "pending"),
+    supabase
+      .from("leave_requests")
+      .select("id, leave_type, start_date, end_date, status, created_at")
+      .order("created_at", { ascending: false })
+      .limit(5),
+    supabase
+      .from("attendance")
+      .select("id, date, check_in, check_out, status")
+      .order("date", { ascending: false })
+      .limit(5),
+  ]);
+
+  const todayAttendance = attendanceResult.data;
+  const pendingLeaves = pendingLeavesResult.count ?? 0;
+  const pendingOvertime = pendingOvertimeResult.count ?? 0;
+  const recentLeaves = recentLeavesResult.data ?? [];
+  const recentAttendance = recentAttendanceResult.data ?? [];
+
+  const statusColors: Record<string, string> = {
+    present: "bg-success/10 text-success",
+    absent: "bg-destructive/10 text-destructive",
+    late: "bg-warning/10 text-warning",
+    half_day: "bg-warning/10 text-warning",
+    pending: "bg-warning/10 text-warning",
+    approved: "bg-success/10 text-success",
+    rejected: "bg-destructive/10 text-destructive",
+    cancelled: "bg-muted/20 text-muted",
+  };
+
+  function formatTime(timestamp: string | null) {
+    if (!timestamp) return "—";
+    return new Date(timestamp).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
   return (
     <MainContent
       title="Dashboard"
@@ -10,34 +75,95 @@ export default function DashboardPage() {
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-lg border border-border bg-background p-5">
           <p className="text-sm font-medium text-muted">Attendance Today</p>
-          <Skeleton className="mt-2 h-8 w-24" />
+          <p className="mt-2 text-2xl font-semibold text-foreground">
+            {todayAttendance
+              ? todayAttendance.status
+                  .charAt(0)
+                  .toUpperCase() +
+                todayAttendance.status.slice(1).replace("_", " ")
+              : "Not recorded"}
+          </p>
         </div>
         <div className="rounded-lg border border-border bg-background p-5">
           <p className="text-sm font-medium text-muted">Pending Leave Requests</p>
-          <Skeleton className="mt-2 h-8 w-24" />
+          <p className="mt-2 text-2xl font-semibold text-foreground">
+            {pendingLeaves}
+          </p>
         </div>
         <div className="rounded-lg border border-border bg-background p-5">
-          <p className="text-sm font-medium text-muted">Notifications</p>
-          <Skeleton className="mt-2 h-8 w-24" />
+          <p className="text-sm font-medium text-muted">Pending Overtime</p>
+          <p className="mt-2 text-2xl font-semibold text-foreground">
+            {pendingOvertime}
+          </p>
         </div>
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <div className="rounded-lg border border-border bg-background p-5">
-          <h2 className="text-sm font-semibold text-foreground">Recent Leave Requests</h2>
-          <div className="mt-4 space-y-3">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
+          <h2 className="text-sm font-semibold text-foreground">
+            Recent Leave Requests
+          </h2>
+          {recentLeaves.length > 0 ? (
+            <div className="mt-4 divide-y divide-border">
+              {recentLeaves.map((leave) => (
+                <div
+                  key={leave.id}
+                  className="flex items-center justify-between py-2.5"
+                >
+                  <div>
+                    <p className="text-sm font-medium capitalize text-foreground">
+                      {leave.leave_type.replace("_", " ")}
+                    </p>
+                    <p className="text-xs text-muted">
+                      {leave.start_date} → {leave.end_date}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColors[leave.status] ?? ""}`}
+                  >
+                    {leave.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-muted">No leave requests yet.</p>
+          )}
         </div>
+
         <div className="rounded-lg border border-border bg-background p-5">
-          <h2 className="text-sm font-semibold text-foreground">Attendance Overview</h2>
-          <div className="mt-4 space-y-3">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
+          <h2 className="text-sm font-semibold text-foreground">
+            Recent Attendance
+          </h2>
+          {recentAttendance.length > 0 ? (
+            <div className="mt-4 divide-y divide-border">
+              {recentAttendance.map((record) => (
+                <div
+                  key={record.id}
+                  className="flex items-center justify-between py-2.5"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      {record.date}
+                    </p>
+                    <p className="text-xs text-muted">
+                      {formatTime(record.check_in)} –{" "}
+                      {formatTime(record.check_out)}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColors[record.status] ?? ""}`}
+                  >
+                    {record.status.replace("_", " ")}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-muted">
+              No attendance records yet.
+            </p>
+          )}
         </div>
       </div>
     </MainContent>
