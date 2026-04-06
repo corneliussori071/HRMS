@@ -13,7 +13,7 @@ import { uuidSchema } from "@/lib/validations/shared";
 import { reviewLeaveRequestSchema } from "@/lib/validations/leave";
 
 const SELECT_FIELDS =
-  "id, user_id, leave_type, leave_type_id, start_date, end_date, reason, status, approved_days, reviewer_id, reviewer_note, reviewed_at, created_at, updated_at, profiles(full_name)";
+  "id, user_id, leave_type, leave_type_id, start_date, end_date, reason, status, approved_days, reviewer_id, reviewer_note, reviewed_at, created_at, updated_at, profiles!leave_requests_user_id_fkey(full_name)";
 
 interface RouteParams {
   params: Promise<{ id: string }>;

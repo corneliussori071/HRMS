@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("leave_requests")
     .select(
-      "id, user_id, leave_type, leave_type_id, start_date, end_date, reason, status, approved_days, reviewer_id, reviewer_note, reviewed_at, created_at, updated_at, profiles(full_name)",
+      "id, user_id, leave_type, leave_type_id, start_date, end_date, reason, status, approved_days, reviewer_id, reviewer_note, reviewed_at, created_at, updated_at, profiles!leave_requests_user_id_fkey(full_name)",
       { count: "exact" }
     );
 
