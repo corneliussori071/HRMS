@@ -2,15 +2,7 @@ import { z } from "zod";
 
 export const createLeaveRequestSchema = z
   .object({
-    leave_type: z.enum([
-      "annual",
-      "sick",
-      "personal",
-      "unpaid",
-      "maternity",
-      "paternity",
-      "bereavement",
-    ]),
+    leave_type_id: z.string().uuid("Invalid leave type"),
     start_date: z.string().date("Invalid start date (expected YYYY-MM-DD)"),
     end_date: z.string().date("Invalid end date (expected YYYY-MM-DD)"),
     reason: z
@@ -26,6 +18,7 @@ export const createLeaveRequestSchema = z
 
 export const reviewLeaveRequestSchema = z.object({
   status: z.enum(["approved", "rejected"]),
+  approved_days: z.coerce.number().min(0.5).max(365).nullable().optional(),
   reviewer_note: z
     .string()
     .trim()
@@ -37,15 +30,5 @@ export const reviewLeaveRequestSchema = z.object({
 export const leaveFilterSchema = z.object({
   user_id: z.string().uuid().optional(),
   status: z.enum(["pending", "approved", "rejected", "cancelled"]).optional(),
-  leave_type: z
-    .enum([
-      "annual",
-      "sick",
-      "personal",
-      "unpaid",
-      "maternity",
-      "paternity",
-      "bereavement",
-    ])
-    .optional(),
+  leave_type_id: z.string().uuid().optional(),
 });

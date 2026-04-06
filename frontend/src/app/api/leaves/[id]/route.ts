@@ -12,6 +12,9 @@ import {
 import { uuidSchema } from "@/lib/validations/shared";
 import { reviewLeaveRequestSchema } from "@/lib/validations/leave";
 
+const SELECT_FIELDS =
+  "id, user_id, leave_type, leave_type_id, start_date, end_date, reason, status, approved_days, reviewer_id, reviewer_note, reviewed_at, created_at, updated_at, profiles(full_name)";
+
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
@@ -27,9 +30,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("leave_requests")
-    .select(
-      "id, user_id, leave_type, start_date, end_date, reason, status, reviewer_id, reviewer_note, reviewed_at, created_at, updated_at"
-    )
+    .select(SELECT_FIELDS)
     .eq("id", id)
     .single();
 
@@ -72,14 +73,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     .from("leave_requests")
     .update({
       status: parsed.data.status,
+      approved_days: parsed.data.approved_days ?? null,
       reviewer_id: auth.userId,
       reviewer_note: parsed.data.reviewer_note ?? null,
       reviewed_at: new Date().toISOString(),
     })
     .eq("id", id)
-    .select(
-      "id, user_id, leave_type, start_date, end_date, reason, status, reviewer_id, reviewer_note, reviewed_at, created_at, updated_at"
-    )
+    .select(SELECT_FIELDS)
     .single();
 
   if (error) return errorResponse("Failed to review leave request", 500);

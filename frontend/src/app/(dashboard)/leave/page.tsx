@@ -20,11 +20,17 @@ interface LeaveRequestRow {
   end_date: string;
   reason: string;
   status: string;
+  approved_days: number | null;
   reviewer_id: string | null;
   reviewer_note: string | null;
   reviewed_at: string | null;
   created_at: string;
   profiles?: { full_name: string } | null;
+}
+
+interface UserProfile {
+  department_id: string | null;
+  rank_id: string | null;
 }
 
 export default function LeavePage() {
@@ -35,6 +41,7 @@ export default function LeavePage() {
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<UserRole>("staff");
   const [userId, setUserId] = useState("");
+  const [userProfile, setUserProfile] = useState<UserProfile>({ department_id: null, rank_id: null });
 
   // New request modal
   const [showModal, setShowModal] = useState(false);
@@ -49,6 +56,7 @@ export default function LeavePage() {
   const [reviewRequest, setReviewRequest] = useState<LeaveRequestRow | null>(null);
   const [reviewStatus, setReviewStatus] = useState("approved");
   const [reviewNote, setReviewNote] = useState("");
+  const [reviewApprovedDays, setReviewApprovedDays] = useState("");
   const [reviewLoading, setReviewLoading] = useState(false);
 
   // Filter
@@ -62,35 +70,27 @@ export default function LeavePage() {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, department_id, rank_id")
       .eq("id", user.id)
       .single();
     const role = (profile?.role as UserRole) || "staff";
     setUserRole(role);
+    setUserProfile({
+      department_id: profile?.department_id ?? null,
+      rank_id: profile?.rank_id ?? null,
+    });
 
-    const isManager = ["admin", "hr", "manager"].includes(role);
-
-    const [settingsRes, typesRes, allocRes] = await Promise.all([
+    const [settingsRes, typesRes, allocRes, leavesRes] = await Promise.all([
       fetch("/api/settings").then((r) => r.json()),
       fetch("/api/leave-types").then((r) => r.json()),
-      fetch("/api/leave-allocations" + (role === "staff" ? `?role=${role}` : "")).then((r) => r.json()),
+      fetch("/api/leave-allocations").then((r) => r.json()),
+      fetch("/api/leaves?pageSize=200").then((r) => r.json()),
     ]);
 
     if (settingsRes.data?.leave_system) setLeaveSystem(settingsRes.data.leave_system);
     if (typesRes.data) setLeaveTypes(typesRes.data);
     if (allocRes.data) setAllocations(allocRes.data);
-
-    let query = supabase
-      .from("leave_requests")
-      .select("id, user_id, leave_type, leave_type_id, start_date, end_date, reason, status, reviewer_id, reviewer_note, reviewed_at, created_at, profiles(full_name)")
-      .order("created_at", { ascending: false });
-
-    if (!isManager) {
-      query = query.eq("user_id", user.id);
-    }
-
-    const { data: requestsData } = await query;
-    if (requestsData) setRequests(requestsData as unknown as LeaveRequestRow[]);
+    if (leavesRes.data?.items) setRequests(leavesRes.data.items);
     setLoading(false);
   }, []);
 
@@ -102,30 +102,51 @@ export default function LeavePage() {
   const currentYear = new Date().getFullYear();
 
   function countDays(start: string, end: string) {
-    const diff = new Date(end).getTime() - new Date(start).getTime();
-    return Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
+    const s = new Date(start);
+    const e = new Date(end);
+    let count = 0;
+    const current = new Date(s);
+    while (current <= e) {
+      count++;
+      current.setDate(current.getDate() + 1);
+    }
+    return count;
   }
 
-  // Filter active types by system
+  // Filter active types by system and user department
   const activeTypes = leaveTypes.filter((lt) => {
     if (!lt.is_active) return false;
-    if (leaveSystem === "both") return true;
-    return lt.system_type === leaveSystem;
+    if (leaveSystem !== "both" && lt.system_type !== leaveSystem) return false;
+    // Show org-wide types (no department) and types matching user's department
+    if (lt.department_id && lt.department_id !== userProfile.department_id) return false;
+    return true;
   });
 
-  // Build balance for current user
-  const myApproved = requests.filter(
-    (r) => r.user_id === userId && r.status === "approved" && new Date(r.start_date).getFullYear() === currentYear
+  // Build balance for current user using rank-based allocations
+  const myRequests = requests.filter(
+    (r) => r.user_id === userId && new Date(r.start_date).getFullYear() === currentYear
   );
 
   function getBalanceForType(lt: LeaveType): { used: number; total: number } {
-    const roleAlloc = allocations.find(
-      (a) => a.leave_type_id === lt.id && a.role === userRole
-    );
-    const total = roleAlloc ? roleAlloc.days_per_year : lt.max_days_per_year;
-    const used = myApproved
-      .filter((r) => r.leave_type_id === lt.id || r.leave_type === lt.name.toLowerCase().replace(/ /g, "_"))
-      .reduce((sum, r) => sum + countDays(r.start_date, r.end_date), 0);
+    // Find rank-based allocation first, then fall back to max_days_per_year
+    let total = lt.max_days_per_year;
+    if (userProfile.rank_id) {
+      const rankAlloc = allocations.find(
+        (a) => a.leave_type_id === lt.id && a.rank_id === userProfile.rank_id
+      );
+      if (rankAlloc) total = rankAlloc.days_per_year;
+    }
+
+    // Count used: approved requests use approved_days if set, pending also counted
+    const used = myRequests
+      .filter((r) => (r.status === "approved" || r.status === "pending") && (r.leave_type_id === lt.id))
+      .reduce((sum, r) => {
+        if (r.status === "approved" && r.approved_days !== null) {
+          return sum + r.approved_days;
+        }
+        return sum + countDays(r.start_date, r.end_date);
+      }, 0);
+
     return { used, total };
   }
 
@@ -134,31 +155,39 @@ export default function LeavePage() {
     ? requests
     : requests.filter((r) => r.status === statusFilter);
 
-  // Leave type options for form
+  // Leave type options: only types available to the user
   const typeOptions = activeTypes.map((lt) => ({ value: lt.id, label: lt.name }));
+
+  // Preview balance when creating a request
+  function getRequestPreview(): { requestedDays: number; remaining: number; total: number } | null {
+    if (!selectedTypeId || !startDate || !endDate || endDate < startDate) return null;
+    const lt = leaveTypes.find((t) => t.id === selectedTypeId);
+    if (!lt) return null;
+    const { used, total } = getBalanceForType(lt);
+    const requestedDays = countDays(startDate, endDate);
+    return { requestedDays, remaining: total - used, total };
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError("");
     setFormLoading(true);
 
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const selectedType = leaveTypes.find((lt) => lt.id === selectedTypeId);
-
-    const { error } = await supabase.from("leave_requests").insert({
-      user_id: user.id,
-      leave_type: selectedType ? selectedType.name.toLowerCase().replace(/ /g, "_") : "annual",
-      leave_type_id: selectedTypeId || null,
-      start_date: startDate,
-      end_date: endDate,
-      reason,
+    const res = await fetch("/api/leaves", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        leave_type_id: selectedTypeId,
+        start_date: startDate,
+        end_date: endDate,
+        reason,
+      }),
     });
 
-    if (error) {
-      setFormError(error.message);
+    const json = await res.json();
+
+    if (!res.ok) {
+      setFormError(json.error || "Failed to submit leave request");
       setFormLoading(false);
       return;
     }
@@ -176,13 +205,19 @@ export default function LeavePage() {
     if (!reviewRequest) return;
     setReviewLoading(true);
 
+    const payload: Record<string, unknown> = {
+      status: reviewStatus,
+      reviewer_note: reviewNote || null,
+    };
+
+    if (reviewStatus === "approved" && reviewApprovedDays) {
+      payload.approved_days = Number(reviewApprovedDays);
+    }
+
     const res = await fetch(`/api/leaves/${reviewRequest.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        status: reviewStatus,
-        reviewer_note: reviewNote || null,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
@@ -192,6 +227,7 @@ export default function LeavePage() {
 
     setReviewRequest(null);
     setReviewNote("");
+    setReviewApprovedDays("");
     setReviewLoading(false);
     await fetchData();
   }
@@ -214,6 +250,8 @@ export default function LeavePage() {
     { value: "approved", label: "Approved" },
     { value: "rejected", label: "Rejected" },
   ];
+
+  const preview = getRequestPreview();
 
   return (
     <MainContent
@@ -265,43 +303,62 @@ export default function LeavePage() {
                   </div>
                 ))
               ) : filteredRequests.length > 0 ? (
-                filteredRequests.map((req) => (
-                  <div key={req.id} className="flex items-center justify-between px-4 py-3">
-                    <div className="flex-1">
-                      {isManager && req.user_id !== userId && (
-                        <p className="text-xs font-medium text-primary">
-                          {req.profiles?.full_name || "Unknown employee"}
+                filteredRequests.map((req) => {
+                  const requestedDays = countDays(req.start_date, req.end_date);
+                  const displayDays = req.status === "approved" && req.approved_days !== null
+                    ? `${req.approved_days} of ${requestedDays} days approved`
+                    : `${requestedDays} days`;
+
+                  return (
+                    <div key={req.id} className="flex items-center justify-between px-4 py-3">
+                      <div className="flex-1">
+                        {isManager && req.user_id !== userId && (
+                          <p className="text-xs font-medium text-primary">
+                            {req.profiles?.full_name || "Unknown employee"}
+                          </p>
+                        )}
+                        <p className="text-sm font-medium capitalize text-foreground">
+                          {req.leave_type.replace(/_/g, " ")}
                         </p>
-                      )}
-                      <p className="text-sm font-medium capitalize text-foreground">
-                        {req.leave_type.replace(/_/g, " ")}
-                      </p>
-                      <p className="text-xs text-muted">
-                        {req.start_date} to {req.end_date} ({countDays(req.start_date, req.end_date)} days) � {req.reason}
-                      </p>
-                      {req.reviewer_note && (
                         <p className="text-xs text-muted">
-                          Review note: {req.reviewer_note}
+                          {req.start_date} to {req.end_date} ({displayDays})
                         </p>
-                      )}
+                        {req.reason && (
+                          <p className="text-xs text-muted">{req.reason}</p>
+                        )}
+                        {req.reviewer_note && (
+                          <p className="text-xs text-muted">
+                            Review note: {req.reviewer_note}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColors[req.status] || ""}`}>
+                          {req.status}
+                        </span>
+                        {isManager && req.status === "pending" && req.user_id !== userId && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setReviewRequest(req);
+                              setReviewStatus("approved");
+                              setReviewNote("");
+                              setReviewApprovedDays(String(countDays(req.start_date, req.end_date)));
+                            }}
+                          >
+                            Review
+                          </Button>
+                        )}
+                        {req.status === "pending" && req.user_id === userId && (
+                          <Button size="sm" variant="ghost" onClick={() => handleDelete(req.id)}>
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColors[req.status] || ""}`}>
-                        {req.status}
-                      </span>
-                      {isManager && req.status === "pending" && req.user_id !== userId && (
-                        <Button size="sm" variant="secondary" onClick={() => { setReviewRequest(req); setReviewStatus("approved"); setReviewNote(""); }}>
-                          Review
-                        </Button>
-                      )}
-                      {req.status === "pending" && req.user_id === userId && (
-                        <Button size="sm" variant="ghost" onClick={() => handleDelete(req.id)}>
-                          Cancel
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="px-4 py-8 text-center text-sm text-muted">
                   No leave requests found.
@@ -314,6 +371,7 @@ export default function LeavePage() {
         {/* Balance Sidebar */}
         <div className="rounded-lg border border-border p-5">
           <h2 className="text-sm font-semibold text-foreground">Leave Balance</h2>
+          <p className="mt-1 text-xs text-muted">Current year ({currentYear})</p>
           {loading ? (
             <div className="mt-4 space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
@@ -321,23 +379,28 @@ export default function LeavePage() {
               ))}
             </div>
           ) : activeTypes.length > 0 ? (
-            <div className="mt-4 space-y-3">
+            <div className="mt-4 space-y-4">
               {activeTypes.map((lt) => {
                 const { used, total } = getBalanceForType(lt);
                 const remaining = Math.max(0, total - used);
+                const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
                 return (
                   <div key={lt.id}>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted">{lt.name}</span>
-                      <span className="text-sm font-medium text-foreground">
-                        {remaining} / {total}
+                      <span className="text-sm text-foreground">{lt.name}</span>
+                      <span className="text-xs text-muted">
+                        {remaining} remaining
                       </span>
                     </div>
-                    <div className="mt-1 h-1.5 w-full rounded-full bg-border">
+                    <div className="mt-1.5 h-2 w-full rounded-full bg-border">
                       <div
-                        className="h-1.5 rounded-full bg-primary"
-                        style={{ width: `${total > 0 ? Math.min(100, (used / total) * 100) : 0}%` }}
+                        className={`h-2 rounded-full transition-all ${pct > 80 ? "bg-destructive" : pct > 50 ? "bg-warning" : "bg-primary"}`}
+                        style={{ width: `${pct}%` }}
                       />
+                    </div>
+                    <div className="mt-1 flex justify-between text-xs text-muted">
+                      <span>{used} used</span>
+                      <span>{total} total</span>
                     </div>
                   </div>
                 );
@@ -362,20 +425,42 @@ export default function LeavePage() {
             placeholder="Select leave type"
             required
           />
-          <FormInput
-            label="Start Date"
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            required
-          />
-          <FormInput
-            label="End Date"
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            required
-          />
+          <div className="grid grid-cols-2 gap-4">
+            <FormInput
+              label="Start Date"
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              required
+            />
+            <FormInput
+              label="End Date"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              min={startDate}
+              required
+            />
+          </div>
+          {preview && (
+            <div className="rounded-md bg-surface px-3 py-2 text-sm">
+              <div className="flex justify-between text-foreground">
+                <span>Requested days</span>
+                <span className="font-medium">{preview.requestedDays}</span>
+              </div>
+              <div className="flex justify-between text-muted">
+                <span>Balance remaining</span>
+                <span className={preview.remaining < preview.requestedDays ? "font-medium text-destructive" : ""}>
+                  {preview.remaining} / {preview.total}
+                </span>
+              </div>
+              {preview.remaining < preview.requestedDays && (
+                <p className="mt-1 text-xs text-destructive">
+                  Insufficient balance for this request.
+                </p>
+              )}
+            </div>
+          )}
           <FormInput
             label="Reason"
             type="text"
@@ -404,7 +489,7 @@ export default function LeavePage() {
       >
         {reviewRequest && (
           <div className="space-y-4">
-            <div className="rounded-lg bg-surface p-3">
+            <div className="rounded-lg bg-surface p-3 space-y-1">
               <p className="text-sm font-medium text-foreground">
                 {reviewRequest.profiles?.full_name || "Employee"}
               </p>
@@ -412,9 +497,9 @@ export default function LeavePage() {
                 {reviewRequest.leave_type.replace(/_/g, " ")}
               </p>
               <p className="text-xs text-muted">
-                {reviewRequest.start_date} to {reviewRequest.end_date} ({countDays(reviewRequest.start_date, reviewRequest.end_date)} days)
+                {reviewRequest.start_date} to {reviewRequest.end_date} ({countDays(reviewRequest.start_date, reviewRequest.end_date)} days requested)
               </p>
-              <p className="mt-1 text-xs text-muted">{reviewRequest.reason}</p>
+              <p className="text-xs text-muted">{reviewRequest.reason}</p>
             </div>
             <FormSelect
               label="Decision"
@@ -425,6 +510,18 @@ export default function LeavePage() {
                 { value: "rejected", label: "Reject" },
               ]}
             />
+            {reviewStatus === "approved" && (
+              <FormInput
+                label="Approved Days"
+                type="number"
+                value={reviewApprovedDays}
+                onChange={(e) => setReviewApprovedDays(e.target.value)}
+                min="0.5"
+                max={String(countDays(reviewRequest.start_date, reviewRequest.end_date))}
+                step="0.5"
+                placeholder={String(countDays(reviewRequest.start_date, reviewRequest.end_date))}
+              />
+            )}
             <FormInput
               label="Note (optional)"
               type="text"
