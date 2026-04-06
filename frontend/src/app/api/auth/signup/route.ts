@@ -30,8 +30,14 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (checkError) {
+      const isTableMissing = checkError.message?.includes("schema cache") ||
+        checkError.message?.includes("does not exist");
       return NextResponse.json(
-        { error: "Failed to verify account status." },
+        {
+          error: isTableMissing
+            ? "Database tables not found. Please run the SQL migrations in your Supabase SQL Editor first (see backend/migrations/combined_migration.sql)."
+            : `Failed to verify account status: ${checkError.message}`,
+        },
         { status: 500 }
       );
     }

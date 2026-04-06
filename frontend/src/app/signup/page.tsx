@@ -39,7 +39,14 @@ export default function SignupPage() {
         body: JSON.stringify({ full_name: fullName, email, password }),
       });
 
-      const data = await res.json();
+      let data: { error?: string };
+      try {
+        data = await res.json();
+      } catch {
+        setError("Server returned an unexpected response. Please try again.");
+        setLoading(false);
+        return;
+      }
 
       if (!res.ok) {
         setError(data.error || "Failed to create account.");
@@ -49,7 +56,7 @@ export default function SignupPage() {
 
       router.push("/login?registered=true");
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("Could not reach the server. Please check your connection and try again.");
       setLoading(false);
     }
   }
