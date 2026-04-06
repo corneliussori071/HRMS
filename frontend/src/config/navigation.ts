@@ -17,14 +17,24 @@ export const NAV_ITEMS: NavItem[] = [
     roles: ["admin", "hr", "manager", "staff"],
   },
   {
-    label: "PTO",
-    href: "/pto",
-    roles: ["admin", "hr", "manager", "staff"],
-  },
-  {
     label: "Overtime",
     href: "/overtime",
     roles: ["admin", "hr", "manager", "staff"],
+  },
+  {
+    label: "Users",
+    href: "/admin/users",
+    roles: ["admin", "hr", "manager"],
+  },
+  {
+    label: "Departments",
+    href: "/admin/departments",
+    roles: ["admin", "hr"],
+  },
+  {
+    label: "Leave Settings",
+    href: "/admin/leave-settings",
+    roles: ["admin", "hr"],
   },
   {
     label: "Profile",
