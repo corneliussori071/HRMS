@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getAuthContext, isAdminOrHr } from "@/lib/api/auth";
+import { getAuthContext, hasPermission } from "@/lib/api/auth";
 import {
   successResponse,
   validationErrorResponse,
@@ -19,7 +19,7 @@ interface RouteParams {
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   const auth = await getAuthContext();
   if (!auth) return unauthorizedResponse();
-  if (!isAdminOrHr(auth.role)) return forbiddenResponse();
+  if (!hasPermission(auth, "leave_settings")) return forbiddenResponse();
 
   const { id } = await params;
   const idResult = uuidSchema.safeParse(id);
@@ -52,7 +52,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   const auth = await getAuthContext();
   if (!auth) return unauthorizedResponse();
-  if (!isAdminOrHr(auth.role)) return forbiddenResponse();
+  if (!hasPermission(auth, "leave_settings")) return forbiddenResponse();
 
   const { id } = await params;
   const idResult = uuidSchema.safeParse(id);

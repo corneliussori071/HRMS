@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getAuthContext, isAdminOrHr, isManagerOrAbove } from "@/lib/api/auth";
+import { getAuthContext, hasPermission } from "@/lib/api/auth";
 import {
   successResponse,
   validationErrorResponse,
@@ -36,7 +36,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
   if (error || !data) return notFoundResponse("Leave request");
 
-  if (auth.role === "staff" && data.user_id !== auth.userId) {
+  if (auth.role === "staff" && !hasPermission(auth, "review_leaves") && data.user_id !== auth.userId) {
     return forbiddenResponse();
   }
 
@@ -46,7 +46,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   const auth = await getAuthContext();
   if (!auth) return unauthorizedResponse();
-  if (!isManagerOrAbove(auth.role)) return forbiddenResponse();
+  if (!hasPermission(auth, "review_leaves")) return forbiddenResponse();
 
   const { id } = await params;
   const idResult = uuidSchema.safeParse(id);
@@ -106,7 +106,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   if (!existing) return notFoundResponse("Leave request");
 
   const canDelete =
-    isAdminOrHr(auth.role) ||
+    hasPermission(auth, "review_leaves") ||
     (existing.user_id === auth.userId && existing.status === "pending");
 
   if (!canDelete) return forbiddenResponse();

@@ -1,9 +1,9 @@
-import { UserRole } from "./auth";
+import { Permission } from "./permission";
 
 export interface NavItem {
   label: string;
   href: string;
-  roles: UserRole[];
+  requiredPermission?: Permission;
 }
 
 export interface NavGroup {

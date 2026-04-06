@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getAuthContext } from "@/lib/api/auth";
+import { getAuthContext, hasPermission } from "@/lib/api/auth";
 import {
   successResponse,
   validationErrorResponse,
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
       { count: "exact" }
     );
 
-  if (auth.role === "staff") {
+  if (!hasPermission(auth, "review_leaves")) {
     query = query.eq("user_id", auth.userId);
   } else if (filters.user_id) {
     query = query.eq("user_id", filters.user_id);

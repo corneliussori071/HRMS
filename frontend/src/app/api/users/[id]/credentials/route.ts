@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getAuthContext, isAdminOrHr } from "@/lib/api/auth";
+import { getAuthContext, hasPermission } from "@/lib/api/auth";
 import {
   successResponse,
   validationErrorResponse,
@@ -18,7 +18,7 @@ interface RouteParams {
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   const auth = await getAuthContext();
   if (!auth) return unauthorizedResponse();
-  if (!isAdminOrHr(auth.role)) return forbiddenResponse();
+  if (!hasPermission(auth, "manage_users")) return forbiddenResponse();
 
   const { id } = await params;
   const idResult = uuidSchema.safeParse(id);

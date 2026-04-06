@@ -8,8 +8,8 @@ import FormInput from "@/components/ui/FormInput";
 import FormSelect from "@/components/ui/FormSelect";
 import Skeleton from "@/components/ui/Skeleton";
 import { createClient } from "@/lib/supabase/client";
-import { UserRole } from "@/types/auth";
 import { LeaveType, LeaveAllocation } from "@/types/leave-config";
+import { Permission } from "@/types/permission";
 
 interface LeaveRequestRow {
   id: string;
@@ -39,9 +39,9 @@ export default function LeavePage() {
   const [allocations, setAllocations] = useState<LeaveAllocation[]>([]);
   const [leaveSystem, setLeaveSystem] = useState<string>("fixed");
   const [loading, setLoading] = useState(true);
-  const [userRole, setUserRole] = useState<UserRole>("staff");
   const [userId, setUserId] = useState("");
   const [userProfile, setUserProfile] = useState<UserProfile>({ department_id: null, rank_id: null });
+  const [userPermissions, setUserPermissions] = useState<Permission[]>([]);
 
   // New request modal
   const [showModal, setShowModal] = useState(false);
@@ -68,17 +68,22 @@ export default function LeavePage() {
     if (!user) return;
     setUserId(user.id);
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role, department_id, rank_id")
-      .eq("id", user.id)
-      .single();
-    const role = (profile?.role as UserRole) || "staff";
-    setUserRole(role);
+    const [{ data: profile }, { data: perms }] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("department_id, rank_id")
+        .eq("id", user.id)
+        .single(),
+      supabase
+        .from("user_permissions")
+        .select("permission")
+        .eq("user_id", user.id),
+    ]);
     setUserProfile({
       department_id: profile?.department_id ?? null,
       rank_id: profile?.rank_id ?? null,
     });
+    setUserPermissions((perms ?? []).map((p) => p.permission as Permission));
 
     const [settingsRes, typesRes, allocRes, leavesRes] = await Promise.all([
       fetch("/api/settings").then((r) => r.json()),
@@ -98,7 +103,7 @@ export default function LeavePage() {
     fetchData();
   }, [fetchData]);
 
-  const isManager = ["admin", "hr", "manager"].includes(userRole);
+  const canReviewLeaves = userPermissions.includes("review_leaves");
   const currentYear = new Date().getFullYear();
 
   function countDays(start: string, end: string) {
@@ -256,7 +261,7 @@ export default function LeavePage() {
   return (
     <MainContent
       title="Leave Management"
-      description={isManager ? "Review team leave requests and manage your own." : "Submit and track your leave requests."}
+      description={canReviewLeaves ? "Review team leave requests and manage your own." : "Submit and track your leave requests."}
       actions={
         <Button size="sm" onClick={() => setShowModal(true)}>
           New Request
@@ -288,7 +293,7 @@ export default function LeavePage() {
           <div className="rounded-lg border border-border">
             <div className="border-b border-border px-4 py-3">
               <h2 className="text-sm font-semibold text-foreground">
-                {isManager ? "Team Leave Requests" : "My Leave Requests"}
+                {canReviewLeaves ? "Team Leave Requests" : "My Leave Requests"}
               </h2>
             </div>
             <div className="divide-y divide-border">
@@ -312,7 +317,7 @@ export default function LeavePage() {
                   return (
                     <div key={req.id} className="flex items-center justify-between px-4 py-3">
                       <div className="flex-1">
-                        {isManager && req.user_id !== userId && (
+                        {canReviewLeaves && req.user_id !== userId && (
                           <p className="text-xs font-medium text-primary">
                             {req.profiles?.full_name || "Unknown employee"}
                           </p>
@@ -336,7 +341,7 @@ export default function LeavePage() {
                         <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColors[req.status] || ""}`}>
                           {req.status}
                         </span>
-                        {isManager && req.status === "pending" && (
+                        {canReviewLeaves && req.status === "pending" && (
                           <Button
                             size="sm"
                             variant="secondary"
@@ -350,7 +355,7 @@ export default function LeavePage() {
                             Review
                           </Button>
                         )}
-                        {!isManager && req.status === "pending" && req.user_id === userId && (
+                        {!canReviewLeaves && req.status === "pending" && req.user_id === userId && (
                           <Button size="sm" variant="ghost" onClick={() => handleDelete(req.id)}>
                             Cancel
                           </Button>

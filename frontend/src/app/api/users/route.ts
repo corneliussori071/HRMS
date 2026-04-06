@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getAuthContext, isAdminOrHr, isManagerOrAbove } from "@/lib/api/auth";
+import { getAuthContext, hasPermission } from "@/lib/api/auth";
 import {
   successResponse,
   validationErrorResponse,
@@ -25,7 +25,7 @@ const LIST_SELECT = `
 export async function GET(request: NextRequest) {
   const auth = await getAuthContext();
   if (!auth) return unauthorizedResponse();
-  if (!isManagerOrAbove(auth.role)) return forbiddenResponse();
+  if (!hasPermission(auth, "users_page")) return forbiddenResponse();
 
   const searchParams = request.nextUrl.searchParams;
   const parsed = paginationSchema.safeParse({
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await getAuthContext();
   if (!auth) return unauthorizedResponse();
-  if (!isAdminOrHr(auth.role)) return forbiddenResponse();
+  if (!hasPermission(auth, "manage_users")) return forbiddenResponse();
 
   const body: unknown = await request.json();
 

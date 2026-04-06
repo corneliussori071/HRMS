@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getAuthContext, isAdminOrHr } from "@/lib/api/auth";
+import { getAuthContext, hasPermission } from "@/lib/api/auth";
 import {
   successResponse,
   unauthorizedResponse,
@@ -36,7 +36,7 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   const auth = await getAuthContext();
   if (!auth) return unauthorizedResponse();
-  if (!isAdminOrHr(auth.role)) return forbiddenResponse();
+  if (!hasPermission(auth, "leave_settings")) return forbiddenResponse();
 
   const body = await request.json() as Record<string, unknown>;
 

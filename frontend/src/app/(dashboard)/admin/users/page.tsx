@@ -6,17 +6,17 @@ import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import FormInput from "@/components/ui/FormInput";
 import FormSelect from "@/components/ui/FormSelect";
+import FormCheckbox from "@/components/ui/FormCheckbox";
 import Skeleton from "@/components/ui/Skeleton";
 import { createClient } from "@/lib/supabase/client";
-import { UserRole } from "@/types/auth";
 import { Department } from "@/types/department";
 import { Rank, StaffingCategory } from "@/types/department-config";
+import { Permission, PERMISSIONS, PERMISSION_LABELS, PERMISSION_DESCRIPTIONS } from "@/types/permission";
 
 interface UserRow {
   id: string;
   email: string;
   full_name: string;
-  role: UserRole;
   department_id: string | null;
   phone: string | null;
   rank_id: string | null;
@@ -47,14 +47,7 @@ interface UserDetail extends UserRow {
   shifts?: { id: string; name: string } | null;
 }
 
-type ModalView = "none" | "add" | "csv" | "edit" | "credentials" | "details";
-
-const ROLE_OPTIONS = [
-  { value: "staff", label: "Staff" },
-  { value: "manager", label: "Manager" },
-  { value: "hr", label: "HR" },
-  { value: "admin", label: "Admin" },
-];
+type ModalView = "none" | "add" | "csv" | "edit" | "credentials" | "details" | "permissions";
 
 const GENDER_OPTIONS = [
   { value: "", label: "Not specified" },
@@ -81,7 +74,7 @@ export default function UsersPage() {
   const [ranks, setRanks] = useState<Rank[]>([]);
   const [categories, setCategories] = useState<StaffingCategory[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentUserRole, setCurrentUserRole] = useState<UserRole>("staff");
+  const [currentUserPermissions, setCurrentUserPermissions] = useState<Permission[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
 
   const [modalView, setModalView] = useState<ModalView>("none");
@@ -94,11 +87,14 @@ export default function UsersPage() {
   // Action modal
   const [actionUser, setActionUser] = useState<UserRow | null>(null);
 
+  // Permissions modal
+  const [permissionForm, setPermissionForm] = useState<Permission[]>([]);
+  const [permissionLoading, setPermissionLoading] = useState(false);
+
   // Add/Edit form fields
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formPassword, setFormPassword] = useState("");
-  const [formRole, setFormRole] = useState("staff");
   const [formDept, setFormDept] = useState("");
   const [formPhone, setFormPhone] = useState("");
   const [formRank, setFormRank] = useState("");
@@ -137,12 +133,15 @@ export default function UsersPage() {
     if (!user) return;
     setCurrentUserId(user.id);
 
-    const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-    if (profile) setCurrentUserRole(profile.role);
+    const { data: perms } = await supabase
+      .from("user_permissions")
+      .select("permission")
+      .eq("user_id", user.id);
+    if (perms) setCurrentUserPermissions(perms.map((p) => p.permission as Permission));
 
     const [usersRes, deptRes, ranksRes, catsRes] = await Promise.all([
       supabase.from("profiles")
-        .select("id, email, full_name, role, department_id, phone, rank_id, staffing_category_id, date_of_employment, status, created_at, updated_at, departments(id, name), ranks(id, name), staffing_categories(id, name)")
+        .select("id, email, full_name, department_id, phone, rank_id, staffing_category_id, date_of_employment, status, created_at, updated_at, departments(id, name), ranks(id, name), staffing_categories(id, name)")
         .order("created_at", { ascending: false }),
       supabase.from("departments").select("id, name, description, created_at").order("name"),
       fetch("/api/ranks").then((r) => r.json()),
@@ -160,7 +159,7 @@ export default function UsersPage() {
     fetchData();
   }, [fetchData]);
 
-  const isAdmin = currentUserRole === "admin" || currentUserRole === "hr";
+  const canManageUsers = currentUserPermissions.includes("manage_users");
 
   const deptOptions = [{ value: "", label: "No department" }, ...departments.map((d) => ({ value: d.id, label: d.name }))];
   const rankOptions = [{ value: "", label: formDept ? "No rank" : "Select a department first" }, ...deptRanks.map((r) => ({ value: r.id, label: r.name }))];
@@ -172,7 +171,7 @@ export default function UsersPage() {
   ];
 
   function resetForm() {
-    setFormName(""); setFormEmail(""); setFormPassword(""); setFormRole("staff");
+    setFormName(""); setFormEmail(""); setFormPassword("");
     setFormDept(""); setFormPhone(""); setFormRank(""); setFormCategory("");
     setFormDob(""); setFormGender(""); setFormAddress("");
     setFormEmergencyName(""); setFormEmergencyPhone("");
@@ -191,7 +190,6 @@ export default function UsersPage() {
     setSelectedUser(user);
     setFormName(user.full_name);
     setFormEmail(user.email);
-    setFormRole(user.role);
     setFormDept(user.department_id || "");
     setFormPhone(user.phone || "");
     setFormRank(user.rank_id || "");
@@ -238,6 +236,47 @@ export default function UsersPage() {
     setDetailLoading(false);
   }
 
+  async function openPermissions(user: UserRow) {
+    setSelectedUser(user);
+    setPermissionLoading(true);
+    setError("");
+    setModalView("permissions");
+    const res = await fetch(`/api/users/${user.id}/permissions`);
+    const json = await res.json();
+    const userPerms = (json.data ?? []).map((p: { permission: string }) => p.permission as Permission);
+    setPermissionForm(userPerms);
+    setPermissionLoading(false);
+  }
+
+  function togglePermission(perm: Permission) {
+    setPermissionForm((prev) =>
+      prev.includes(perm) ? prev.filter((p) => p !== perm) : [...prev, perm]
+    );
+  }
+
+  async function handleUpdatePermissions(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedUser) return;
+    setSaving(true);
+    setError("");
+
+    const res = await fetch(`/api/users/${selectedUser.id}/permissions`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ permissions: permissionForm }),
+    });
+
+    if (!res.ok) {
+      const body = await res.json();
+      setError(body.error || "Failed to update permissions");
+      setSaving(false);
+      return;
+    }
+
+    setModalView("none");
+    setSaving(false);
+  }
+
   function openCsv() {
     setCsvData([]);
     setCsvResults([]);
@@ -254,7 +293,6 @@ export default function UsersPage() {
       email: formEmail,
       password: formPassword,
       full_name: formName,
-      role: formRole,
       department_id: formDept || null,
       phone: formPhone || null,
       rank_id: formRank || null,
@@ -299,7 +337,6 @@ export default function UsersPage() {
 
     const payload = {
       full_name: formName,
-      role: formRole,
       department_id: formDept || null,
       phone: formPhone || null,
       rank_id: formRank || null,
@@ -463,7 +500,6 @@ export default function UsersPage() {
           <FormSelect label="Department" value={formDept} onChange={(e) => { setFormDept(e.target.value); setFormRank(""); setFormCategory(""); }} options={deptOptions} />
           <FormSelect label="Role" value={formCategory} onChange={(e) => setFormCategory(e.target.value)} options={catOptions} disabled={!formDept} />
           <FormSelect label="Rank" value={formRank} onChange={(e) => setFormRank(e.target.value)} options={rankOptions} disabled={!formDept} />
-          <FormSelect label="System Role" value={formRole} onChange={(e) => setFormRole(e.target.value)} options={ROLE_OPTIONS} />
           <FormInput label="Date of Employment" type="date" value={formDoe} onChange={(e) => setFormDoe(e.target.value)} />
           <FormSelect label="Employment Type" value={formEmploymentType} onChange={(e) => setFormEmploymentType(e.target.value)} options={EMPLOYMENT_TYPE_OPTIONS} />
           {isEdit && <FormSelect label="Status" value={formStatus} onChange={(e) => setFormStatus(e.target.value)} options={statusOptions} />}
@@ -484,9 +520,9 @@ export default function UsersPage() {
   return (
     <MainContent
       title="Users"
-      description="Manage employee accounts, roles, and department assignments."
+      description="Manage employee accounts and department assignments."
       actions={
-        isAdmin ? (
+        canManageUsers ? (
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={openCsv}>CSV Import</Button>
             <Button size="sm" onClick={openAdd}>Add User</Button>
@@ -500,11 +536,10 @@ export default function UsersPage() {
             <tr>
               <th className="px-4 py-3 font-medium text-muted">Name</th>
               <th className="px-4 py-3 font-medium text-muted">Email</th>
-              <th className="px-4 py-3 font-medium text-muted">System Role</th>
               <th className="px-4 py-3 font-medium text-muted">Department</th>
               <th className="px-4 py-3 font-medium text-muted">Date of Employment</th>
               <th className="px-4 py-3 font-medium text-muted">Status</th>
-              {isAdmin && <th className="px-4 py-3 font-medium text-muted">Actions</th>}
+              {canManageUsers && <th className="px-4 py-3 font-medium text-muted">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -513,11 +548,10 @@ export default function UsersPage() {
                 <tr key={i} className="border-b border-border last:border-0">
                   <td className="px-4 py-3"><Skeleton className="h-5 w-32" /></td>
                   <td className="px-4 py-3"><Skeleton className="h-5 w-40" /></td>
-                  <td className="px-4 py-3"><Skeleton className="h-5 w-16" /></td>
                   <td className="px-4 py-3"><Skeleton className="h-5 w-24" /></td>
                   <td className="px-4 py-3"><Skeleton className="h-5 w-24" /></td>
                   <td className="px-4 py-3"><Skeleton className="h-5 w-16" /></td>
-                  {isAdmin && <td className="px-4 py-3"><Skeleton className="h-5 w-16" /></td>}
+                  {canManageUsers && <td className="px-4 py-3"><Skeleton className="h-5 w-16" /></td>}
                 </tr>
               ))
             ) : users.length > 0 ? (
@@ -525,15 +559,12 @@ export default function UsersPage() {
                 <tr key={u.id} className="border-b border-border last:border-0">
                   <td className="px-4 py-3 font-medium text-foreground">{u.full_name}</td>
                   <td className="px-4 py-3 text-foreground">{u.email}</td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full bg-surface px-2.5 py-0.5 text-xs font-medium capitalize text-foreground">{u.role}</span>
-                  </td>
                   <td className="px-4 py-3 text-foreground">{u.departments?.name || "\u2014"}</td>
                   <td className="px-4 py-3 text-muted">{u.date_of_employment ? new Date(u.date_of_employment).toLocaleDateString() : "\u2014"}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColors[u.status] || ""}`}>{u.status || "active"}</span>
                   </td>
-                  {isAdmin && (
+                  {canManageUsers && (
                     <td className="px-4 py-3">
                       <Button
                         size="sm"
@@ -548,7 +579,7 @@ export default function UsersPage() {
               ))
             ) : (
               <tr>
-                <td colSpan={isAdmin ? 7 : 6} className="px-4 py-8 text-center text-sm text-muted">No users found.</td>
+                <td colSpan={canManageUsers ? 6 : 5} className="px-4 py-8 text-center text-sm text-muted">No users found.</td>
               </tr>
             )}
           </tbody>
@@ -623,7 +654,6 @@ export default function UsersPage() {
                 <dt className="text-muted">Department</dt><dd className="text-foreground">{userDetail.departments?.name || "\u2014"}</dd>
                 <dt className="text-muted">Role</dt><dd className="text-foreground">{userDetail.staffing_categories?.name || "\u2014"}</dd>
                 <dt className="text-muted">Rank</dt><dd className="text-foreground">{userDetail.ranks?.name || "\u2014"}</dd>
-                <dt className="text-muted">System Role</dt><dd className="text-foreground capitalize">{userDetail.role}</dd>
                 <dt className="text-muted">Shift</dt><dd className="text-foreground">{userDetail.shifts?.name || "\u2014"}</dd>
                 <dt className="text-muted">Date of Employment</dt><dd className="text-foreground">{userDetail.date_of_employment || "\u2014"}</dd>
                 <dt className="text-muted">Employment Type</dt><dd className="text-foreground capitalize">{(userDetail.employment_type || "").replace("_", " ")}</dd>
@@ -659,6 +689,9 @@ export default function UsersPage() {
             </button>
             <button type="button" className="w-full rounded-md px-4 py-2.5 text-left text-sm font-medium text-foreground hover:bg-surface" onClick={() => { const u = actionUser; setActionUser(null); openCredentials(u); }}>
               Update Credentials
+            </button>
+            <button type="button" className="w-full rounded-md px-4 py-2.5 text-left text-sm font-medium text-foreground hover:bg-surface" onClick={() => { const u = actionUser; setActionUser(null); openPermissions(u); }}>
+              Update Permissions
             </button>
             {actionUser.id !== currentUserId && (
               <>
@@ -724,6 +757,36 @@ export default function UsersPage() {
             )}
           </div>
         </div>
+      </Modal>
+
+      {/* Permissions Modal */}
+      <Modal isOpen={modalView === "permissions"} onClose={() => setModalView("none")} title={`Permissions: ${selectedUser?.full_name || ""}`}>
+        {permissionLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}
+          </div>
+        ) : (
+          <form onSubmit={handleUpdatePermissions} className="space-y-4">
+            <p className="text-sm text-muted">Select the permissions to grant to this user.</p>
+            <div className="space-y-3">
+              {PERMISSIONS.map((perm) => (
+                <div key={perm} className="rounded-lg border border-border px-4 py-3">
+                  <FormCheckbox
+                    label={PERMISSION_LABELS[perm]}
+                    checked={permissionForm.includes(perm)}
+                    onChange={() => togglePermission(perm)}
+                  />
+                  <p className="mt-1 pl-6 text-xs text-muted">{PERMISSION_DESCRIPTIONS[perm]}</p>
+                </div>
+              ))}
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="secondary" onClick={() => setModalView("none")}>Cancel</Button>
+              <Button type="submit" disabled={saving}>{saving ? "Saving..." : "Update Permissions"}</Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </MainContent>
   );

@@ -5,18 +5,19 @@ import { useRouter } from "next/navigation";
 import Header from "@/components/layout/Header";
 import Sidebar from "@/components/layout/Sidebar";
 import Footer from "@/components/layout/Footer";
-import { getNavItemsForRole } from "@/config/navigation";
+import { getNavItemsForPermissions } from "@/config/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { Permission } from "@/types/permission";
 
 interface DashboardShellProps {
   children: ReactNode;
-  userRole: string;
   userName: string;
+  permissions: Permission[];
 }
 
-export default function DashboardShell({ children, userRole, userName }: DashboardShellProps) {
+export default function DashboardShell({ children, userName, permissions }: DashboardShellProps) {
   const router = useRouter();
-  const navItems = getNavItemsForRole(userRole);
+  const navItems = getNavItemsForPermissions(permissions);
 
   const handleSignOut = useCallback(async () => {
     const supabase = createClient();

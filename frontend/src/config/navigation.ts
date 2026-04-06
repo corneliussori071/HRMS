@@ -1,48 +1,48 @@
 import { NavItem } from "@/types/navigation";
+import { Permission } from "@/types/permission";
 
 export const NAV_ITEMS: NavItem[] = [
   {
     label: "Dashboard",
     href: "/dashboard",
-    roles: ["admin", "hr", "manager", "staff"],
   },
   {
     label: "Attendance",
     href: "/attendance",
-    roles: ["admin", "hr", "manager", "staff"],
   },
   {
     label: "Leave Management",
     href: "/leave",
-    roles: ["admin", "hr", "manager", "staff"],
   },
   {
     label: "Overtime",
     href: "/overtime",
-    roles: ["admin", "hr", "manager", "staff"],
   },
   {
     label: "Users",
     href: "/admin/users",
-    roles: ["admin", "hr", "manager"],
+    requiredPermission: "users_page",
   },
   {
     label: "Departments",
     href: "/admin/departments",
-    roles: ["admin", "hr"],
+    requiredPermission: "manage_users",
   },
   {
     label: "Leave Settings",
     href: "/admin/leave-settings",
-    roles: ["admin", "hr"],
+    requiredPermission: "leave_settings",
   },
   {
     label: "Profile",
     href: "/profile",
-    roles: ["admin", "hr", "manager", "staff"],
   },
 ];
 
-export function getNavItemsForRole(role: string): NavItem[] {
-  return NAV_ITEMS.filter((item) => item.roles.includes(role as NavItem["roles"][number]));
+export function getNavItemsForPermissions(permissions: Permission[]): NavItem[] {
+  const permSet = new Set(permissions);
+  return NAV_ITEMS.filter((item) => {
+    if (!item.requiredPermission) return true;
+    return permSet.has(item.requiredPermission);
+  });
 }
