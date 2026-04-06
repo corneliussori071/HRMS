@@ -36,8 +36,12 @@ export default function DepartmentsPage() {
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [editShift, setEditShift] = useState<Shift | null>(null);
   const [shiftName, setShiftName] = useState("");
+  const [shiftKey, setShiftKey] = useState("");
   const [shiftStart, setShiftStart] = useState("");
   const [shiftEnd, setShiftEnd] = useState("");
+  const [shiftBreak, setShiftBreak] = useState("0");
+  const [shiftMinHours, setShiftMinHours] = useState("0");
+  const [shiftMaxHours, setShiftMaxHours] = useState("40");
   const [shiftSaving, setShiftSaving] = useState(false);
   const [shiftError, setShiftError] = useState("");
 
@@ -153,8 +157,12 @@ export default function DepartmentsPage() {
     if (!selectedDept) return;
     setEditShift(null);
     setShiftName("");
+    setShiftKey("");
     setShiftStart("");
     setShiftEnd("");
+    setShiftBreak("0");
+    setShiftMinHours("0");
+    setShiftMaxHours("40");
     setShiftError("");
     setShowShiftModal(true);
   }
@@ -162,8 +170,12 @@ export default function DepartmentsPage() {
   function openEditShift(shift: Shift) {
     setEditShift(shift);
     setShiftName(shift.name);
+    setShiftKey(shift.short_key);
     setShiftStart(shift.start_time.slice(0, 5));
     setShiftEnd(shift.end_time.slice(0, 5));
+    setShiftBreak(String(shift.break_minutes));
+    setShiftMinHours(String(shift.min_hours_per_week));
+    setShiftMaxHours(String(shift.max_hours_per_week));
     setShiftError("");
     setShowShiftModal(true);
   }
@@ -175,7 +187,15 @@ export default function DepartmentsPage() {
     setShiftError("");
     const url = editShift ? `/api/shifts/${editShift.id}` : "/api/shifts";
     const method = editShift ? "PUT" : "POST";
-    const body: Record<string, unknown> = { name: shiftName, start_time: shiftStart, end_time: shiftEnd };
+    const body: Record<string, unknown> = {
+      name: shiftName,
+      short_key: shiftKey,
+      start_time: shiftStart,
+      end_time: shiftEnd,
+      break_minutes: parseInt(shiftBreak, 10) || 0,
+      min_hours_per_week: parseFloat(shiftMinHours) || 0,
+      max_hours_per_week: parseFloat(shiftMaxHours) || 40,
+    };
     if (!editShift) body.department_id = selectedDept;
     const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) {
@@ -444,8 +464,10 @@ export default function DepartmentsPage() {
               <thead>
                 <tr className="border-b border-border">
                   <th className="pb-2 font-medium text-muted">Name</th>
-                  <th className="pb-2 font-medium text-muted">Start</th>
-                  <th className="pb-2 font-medium text-muted">End</th>
+                  <th className="pb-2 font-medium text-muted">Key</th>
+                  <th className="pb-2 font-medium text-muted">Time</th>
+                  <th className="pb-2 font-medium text-muted">Break</th>
+                  <th className="pb-2 font-medium text-muted">Hours/Week</th>
                   <th className="pb-2 font-medium text-muted">Status</th>
                   <th className="pb-2 text-right font-medium text-muted">Actions</th>
                 </tr>
@@ -454,8 +476,12 @@ export default function DepartmentsPage() {
                 {items.map((s) => (
                   <tr key={s.id} className="border-b border-border last:border-0">
                     <td className="py-2.5 font-medium text-foreground">{s.name}</td>
-                    <td className="py-2.5 text-foreground">{s.start_time.slice(0, 5)}</td>
-                    <td className="py-2.5 text-foreground">{s.end_time.slice(0, 5)}</td>
+                    <td className="py-2.5 text-foreground">
+                      <span className="rounded bg-surface px-1.5 py-0.5 text-xs font-mono font-medium">{s.short_key}</span>
+                    </td>
+                    <td className="py-2.5 text-foreground">{s.start_time.slice(0, 5)} - {s.end_time.slice(0, 5)}</td>
+                    <td className="py-2.5 text-foreground">{s.break_minutes} min</td>
+                    <td className="py-2.5 text-foreground">{s.min_hours_per_week} - {s.max_hours_per_week}</td>
                     <td className="py-2.5">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.is_active ? "bg-success/10 text-success" : "bg-muted/20 text-muted"}`}>
                         {s.is_active ? "Active" : "Inactive"}
@@ -621,9 +647,19 @@ export default function DepartmentsPage() {
       {/* Shift Modal */}
       <Modal isOpen={showShiftModal} onClose={() => setShowShiftModal(false)} title={editShift ? "Edit Shift" : "Add Shift"}>
         <form onSubmit={handleSaveShift} className="space-y-4">
-          <FormInput label="Shift Name" value={shiftName} onChange={(e) => setShiftName(e.target.value)} placeholder="e.g. Morning, Afternoon, Night" required />
-          <FormInput label="Start Time" type="time" value={shiftStart} onChange={(e) => setShiftStart(e.target.value)} required />
-          <FormInput label="End Time" type="time" value={shiftEnd} onChange={(e) => setShiftEnd(e.target.value)} required />
+          <div className="grid grid-cols-2 gap-4">
+            <FormInput label="Shift Name" value={shiftName} onChange={(e) => setShiftName(e.target.value)} placeholder="e.g. Morning" required />
+            <FormInput label="Key" value={shiftKey} onChange={(e) => setShiftKey(e.target.value)} placeholder="e.g. M, A, N, X" required />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <FormInput label="Start Time" type="time" value={shiftStart} onChange={(e) => setShiftStart(e.target.value)} required />
+            <FormInput label="End Time" type="time" value={shiftEnd} onChange={(e) => setShiftEnd(e.target.value)} required />
+          </div>
+          <FormInput label="Break Duration (minutes)" type="number" value={shiftBreak} onChange={(e) => setShiftBreak(e.target.value)} placeholder="e.g. 30" />
+          <div className="grid grid-cols-2 gap-4">
+            <FormInput label="Min Hours/Week" type="number" value={shiftMinHours} onChange={(e) => setShiftMinHours(e.target.value)} placeholder="e.g. 20" />
+            <FormInput label="Max Hours/Week" type="number" value={shiftMaxHours} onChange={(e) => setShiftMaxHours(e.target.value)} placeholder="e.g. 40" />
+          </div>
           {shiftError && <p className="text-sm text-destructive">{shiftError}</p>}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setShowShiftModal(false)}>Cancel</Button>

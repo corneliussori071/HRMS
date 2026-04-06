@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from("shifts")
-    .select("id, department_id, name, start_time, end_time, is_active, created_at, updated_at")
+    .select("id, department_id, name, short_key, start_time, end_time, break_minutes, min_hours_per_week, max_hours_per_week, is_active, created_at, updated_at")
     .order("name", { ascending: true });
 
   if (departmentId) {
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
   const { data, error } = await supabase
     .from("shifts")
     .insert(parsed.data)
-    .select("id, department_id, name, start_time, end_time, is_active, created_at, updated_at")
+    .select("id, department_id, name, short_key, start_time, end_time, break_minutes, min_hours_per_week, max_hours_per_week, is_active, created_at, updated_at")
     .single();
 
   if (error) {

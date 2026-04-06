@@ -27,7 +27,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("shifts")
-    .select("id, department_id, name, start_time, end_time, is_active, created_at, updated_at")
+    .select("id, department_id, name, short_key, start_time, end_time, break_minutes, min_hours_per_week, max_hours_per_week, is_active, created_at, updated_at")
     .eq("id", id)
     .single();
 
@@ -55,7 +55,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     .from("shifts")
     .update(parsed.data)
     .eq("id", id)
-    .select("id, department_id, name, start_time, end_time, is_active, created_at, updated_at")
+    .select("id, department_id, name, short_key, start_time, end_time, break_minutes, min_hours_per_week, max_hours_per_week, is_active, created_at, updated_at")
     .single();
 
   if (error) {
