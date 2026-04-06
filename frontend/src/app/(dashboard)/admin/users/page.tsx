@@ -170,8 +170,8 @@ export default function UsersPage() {
   const isAdmin = currentUserRole === "admin" || currentUserRole === "hr";
 
   const deptOptions = [{ value: "", label: "No department" }, ...departments.map((d) => ({ value: d.id, label: d.name }))];
-  const rankOptions = [{ value: "", label: "No rank" }, ...deptRanks.map((r) => ({ value: r.id, label: r.name }))];
-  const catOptions = [{ value: "", label: "No category" }, ...deptCategories.map((c) => ({ value: c.id, label: c.name }))];
+  const rankOptions = [{ value: "", label: formDept ? "No rank" : "Select a department first" }, ...deptRanks.map((r) => ({ value: r.id, label: r.name }))];
+  const catOptions = [{ value: "", label: formDept ? "No role" : "Select a department first" }, ...deptCategories.map((c) => ({ value: c.id, label: c.name }))];
   const statusOptions = [
     { value: "active", label: "Active" },
     { value: "suspended", label: "Suspended" },
@@ -467,14 +467,10 @@ export default function UsersPage() {
 
         <fieldset className="space-y-3">
           <legend className="text-sm font-semibold text-foreground">Employment Information</legend>
-          <FormSelect label="Role" value={formRole} onChange={(e) => setFormRole(e.target.value)} options={ROLE_OPTIONS} />
           <FormSelect label="Department" value={formDept} onChange={(e) => { setFormDept(e.target.value); setFormRank(""); setFormCategory(""); }} options={deptOptions} />
-          {deptRanks.length > 0 && (
-            <FormSelect label="Rank" value={formRank} onChange={(e) => setFormRank(e.target.value)} options={rankOptions} />
-          )}
-          {deptCategories.length > 0 && (
-            <FormSelect label="Staffing Category" value={formCategory} onChange={(e) => setFormCategory(e.target.value)} options={catOptions} />
-          )}
+          <FormSelect label="Role" value={formCategory} onChange={(e) => setFormCategory(e.target.value)} options={catOptions} disabled={!formDept} />
+          <FormSelect label="Rank" value={formRank} onChange={(e) => setFormRank(e.target.value)} options={rankOptions} disabled={!formDept} />
+          <FormSelect label="System Role" value={formRole} onChange={(e) => setFormRole(e.target.value)} options={ROLE_OPTIONS} />
           <FormInput label="Date of Employment" type="date" value={formDoe} onChange={(e) => setFormDoe(e.target.value)} />
           <FormSelect label="Employment Type" value={formEmploymentType} onChange={(e) => setFormEmploymentType(e.target.value)} options={EMPLOYMENT_TYPE_OPTIONS} />
           {isEdit && <FormSelect label="Status" value={formStatus} onChange={(e) => setFormStatus(e.target.value)} options={statusOptions} />}
@@ -511,7 +507,7 @@ export default function UsersPage() {
             <tr>
               <th className="px-4 py-3 font-medium text-muted">Name</th>
               <th className="px-4 py-3 font-medium text-muted">Email</th>
-              <th className="px-4 py-3 font-medium text-muted">Role</th>
+              <th className="px-4 py-3 font-medium text-muted">System Role</th>
               <th className="px-4 py-3 font-medium text-muted">Department</th>
               <th className="px-4 py-3 font-medium text-muted">Date of Employment</th>
               <th className="px-4 py-3 font-medium text-muted">Status</th>
@@ -656,10 +652,10 @@ export default function UsersPage() {
             <section>
               <h3 className="mb-2 text-sm font-semibold text-foreground">Employment Information</h3>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                <dt className="text-muted">Role</dt><dd className="text-foreground capitalize">{userDetail.role}</dd>
                 <dt className="text-muted">Department</dt><dd className="text-foreground">{userDetail.departments?.name || "\u2014"}</dd>
+                <dt className="text-muted">Role</dt><dd className="text-foreground">{userDetail.staffing_categories?.name || "\u2014"}</dd>
                 <dt className="text-muted">Rank</dt><dd className="text-foreground">{userDetail.ranks?.name || "\u2014"}</dd>
-                <dt className="text-muted">Staffing Category</dt><dd className="text-foreground">{userDetail.staffing_categories?.name || "\u2014"}</dd>
+                <dt className="text-muted">System Role</dt><dd className="text-foreground capitalize">{userDetail.role}</dd>
                 <dt className="text-muted">Shift</dt><dd className="text-foreground">{userDetail.shifts?.name || "\u2014"}</dd>
                 <dt className="text-muted">Date of Employment</dt><dd className="text-foreground">{userDetail.date_of_employment || "\u2014"}</dd>
                 <dt className="text-muted">Employment Type</dt><dd className="text-foreground capitalize">{(userDetail.employment_type || "").replace("_", " ")}</dd>
