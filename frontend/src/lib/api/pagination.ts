@@ -13,7 +13,7 @@ export function buildPaginatedResult<T>(
   pageSize: number
 ) {
   return {
-    data,
+    items: data,
     total,
     page,
     pageSize,
