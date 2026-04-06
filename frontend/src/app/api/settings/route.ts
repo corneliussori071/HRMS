@@ -22,7 +22,12 @@ export async function GET() {
 
   const settings: Record<string, unknown> = {};
   for (const row of data ?? []) {
-    settings[row.key] = row.value;
+    let val: unknown = row.value;
+    // Unwrap any previously double-encoded jsonb strings
+    if (typeof val === "string") {
+      try { val = JSON.parse(val); } catch { /* use as-is */ }
+    }
+    settings[row.key] = val;
   }
 
   return successResponse(settings);
@@ -46,7 +51,7 @@ export async function PUT(request: NextRequest) {
     const { error } = await supabase
       .from("system_settings")
       .upsert(
-        { key, value: JSON.stringify(value), updated_by: auth.userId },
+        { key, value, updated_by: auth.userId },
         { onConflict: "key" }
       );
 

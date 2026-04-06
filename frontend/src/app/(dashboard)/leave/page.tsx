@@ -84,7 +84,7 @@ export default function LeavePage() {
       fetch("/api/settings").then((r) => r.json()),
       fetch("/api/leave-types").then((r) => r.json()),
       fetch("/api/leave-allocations").then((r) => r.json()),
-      fetch("/api/leaves?pageSize=200").then((r) => r.json()),
+      fetch("/api/leaves?pageSize=100").then((r) => r.json()),
     ]);
 
     if (settingsRes.data?.leave_system) setLeaveSystem(settingsRes.data.leave_system);
