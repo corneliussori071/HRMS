@@ -336,7 +336,7 @@ export default function LeavePage() {
                         <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColors[req.status] || ""}`}>
                           {req.status}
                         </span>
-                        {isManager && req.status === "pending" && req.user_id !== userId && (
+                        {isManager && req.status === "pending" && (
                           <Button
                             size="sm"
                             variant="secondary"
@@ -350,7 +350,7 @@ export default function LeavePage() {
                             Review
                           </Button>
                         )}
-                        {req.status === "pending" && req.user_id === userId && (
+                        {!isManager && req.status === "pending" && req.user_id === userId && (
                           <Button size="sm" variant="ghost" onClick={() => handleDelete(req.id)}>
                             Cancel
                           </Button>
