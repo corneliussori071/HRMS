@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthContext, hasPermission } from "@/lib/api/auth";
 import {
   successResponse,
@@ -73,9 +74,9 @@ export async function POST(request: NextRequest) {
     const parsed = rowsSchema.safeParse(body);
     if (!parsed.success) return validationErrorResponse(parsed.error);
 
-    const supabase = await createClient();
+    const adminClient = createAdminClient();
 
-    const { data: departments } = await supabase
+    const { data: departments } = await adminClient
       .from("departments")
       .select("id, name");
     const deptMap = new Map((departments ?? []).map((d: { id: string; name: string }) => [d.name.toLowerCase(), d.id]));
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
     for (const row of parsed.data) {
       const deptId = row.department ? (deptMap.get(row.department.toLowerCase()) ?? null) : null;
 
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
         email: row.email,
         password: "TempPass123!",
         email_confirm: true,
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const { error: profileError } = await supabase
+      const { error: profileError } = await adminClient
         .from("profiles")
         .update({
           full_name: row.full_name,
@@ -128,9 +129,9 @@ export async function POST(request: NextRequest) {
 
   const { email, password, ...profileData } = parsed.data;
 
-  const supabase = await createClient();
+  const adminClient = createAdminClient();
 
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+  const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
     return errorResponse(authError?.message ?? "Failed to create user", 400);
   }
 
-  const { data: profile, error: profileError } = await supabase
+  const { data: profile, error: profileError } = await adminClient
     .from("profiles")
     .update({
       ...profileData,

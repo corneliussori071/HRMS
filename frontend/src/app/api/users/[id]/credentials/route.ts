@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthContext, hasPermission } from "@/lib/api/auth";
 import {
   successResponse,
@@ -28,7 +28,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   const parsed = updateCredentialsSchema.safeParse(body);
   if (!parsed.success) return validationErrorResponse(parsed.error);
 
-  const supabase = await createClient();
+  const adminClient = createAdminClient();
 
   const updatePayload: Record<string, string> = {};
   if (parsed.data.email) updatePayload.email = parsed.data.email;
@@ -38,14 +38,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     return errorResponse("No credentials to update");
   }
 
-  const { error } = await supabase.auth.admin.updateUserById(id, updatePayload);
+  const { error } = await adminClient.auth.admin.updateUserById(id, updatePayload);
 
   if (error) {
     return errorResponse(error.message, 400);
   }
 
   if (parsed.data.email) {
-    await supabase
+    await adminClient
       .from("profiles")
       .update({ email: parsed.data.email })
       .eq("id", id);
