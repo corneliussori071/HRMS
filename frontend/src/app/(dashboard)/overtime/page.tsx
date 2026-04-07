@@ -24,6 +24,16 @@ interface OvertimeRow {
   profiles?: { full_name: string } | null;
 }
 
+interface UnderstaffedSlot {
+  date: string;
+  shift_id: string;
+  shift_name: string;
+  shift_key: string;
+  assigned_count: number;
+  min_required: number;
+  roster_title: string;
+}
+
 export default function OvertimePage() {
   const [entries, setEntries] = useState<OvertimeRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,6 +56,10 @@ export default function OvertimePage() {
 
   // Filter
   const [statusFilter, setStatusFilter] = useState("all");
+
+  // Understaffed shifts from rosters
+  const [understaffedSlots, setUnderstaffedSlots] = useState<UnderstaffedSlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     const supabase = createClient();
@@ -77,11 +91,92 @@ export default function OvertimePage() {
     setLoading(false);
   }, []);
 
+  const isManager = ["admin", "hr", "manager"].includes(userRole);
+
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  const isManager = ["admin", "hr", "manager"].includes(userRole);
+  const fetchUnderstaffedSlots = useCallback(async () => {
+    setSlotsLoading(true);
+    try {
+      const res = await fetch("/api/rosters?status=published");
+      const json = await res.json();
+      interface PublishedRoster {
+        id: string;
+        title: string;
+        min_staff_per_shift: number;
+      }
+      const rosters: PublishedRoster[] = json.data ?? [];
+      const allSlots: UnderstaffedSlot[] = [];
+
+      for (const roster of rosters) {
+        const detailRes = await fetch(`/api/rosters/${roster.id}`);
+        const detailJson = await detailRes.json();
+        const data = detailJson.data;
+        if (!data) continue;
+
+        interface MiniShiftRow {
+          shift_id: string;
+          shifts: { id: string; name: string; short_key: string } | null;
+        }
+        interface MiniAssignment {
+          user_id: string;
+          date: string;
+          shift_id: string | null;
+        }
+
+        const shiftRows = data.roster_shifts as MiniShiftRow[];
+        const assignments = data.assignments as MiniAssignment[];
+
+        const grid: Record<string, Record<string, string | null>> = {};
+        for (const a of assignments) {
+          if (!grid[a.date]) grid[a.date] = {};
+          grid[a.date][a.user_id] = a.shift_id;
+        }
+
+        const dates = Object.keys(grid).sort();
+        for (const d of dates) {
+          const dayMap = grid[d];
+          const shiftCounts: Record<string, number> = {};
+          for (const sid of Object.values(dayMap)) {
+            if (sid) shiftCounts[sid] = (shiftCounts[sid] || 0) + 1;
+          }
+          for (const sr of shiftRows) {
+            if (!sr.shifts) continue;
+            const count = shiftCounts[sr.shift_id] || 0;
+            if (count < roster.min_staff_per_shift) {
+              allSlots.push({
+                date: d,
+                shift_id: sr.shift_id,
+                shift_name: sr.shifts.name,
+                shift_key: sr.shifts.short_key,
+                assigned_count: count,
+                min_required: roster.min_staff_per_shift,
+                roster_title: roster.title,
+              });
+            }
+          }
+        }
+      }
+      setUnderstaffedSlots(allSlots);
+    } finally {
+      setSlotsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isManager) {
+      fetchUnderstaffedSlots();
+    }
+  }, [isManager, fetchUnderstaffedSlots]);
+
+  function prefillFromSlot(slot: UnderstaffedSlot) {
+    setDate(slot.date);
+    setReason(`Overtime needed: ${slot.shift_name} shift on ${slot.date} (understaffed by ${slot.min_required - slot.assigned_count})`);
+    setShowModal(true);
+  }
+
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
@@ -210,6 +305,64 @@ export default function OvertimePage() {
           )}
         </div>
       </div>
+
+      {/* Understaffed Shifts from Rosters */}
+      {isManager && (
+        <div className="mt-6 space-y-3">
+          <h3 className="text-sm font-semibold text-foreground">Understaffed Roster Shifts</h3>
+          {slotsLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-3/4" />
+            </div>
+          ) : understaffedSlots.length > 0 ? (
+            <>
+              <p className="text-xs text-muted">
+                Published rosters with shifts below minimum staffing. Click to pre-fill an overtime request.
+              </p>
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-border bg-surface">
+                    <tr>
+                      <th className="px-4 py-3 font-medium text-muted">Roster</th>
+                      <th className="px-4 py-3 font-medium text-muted">Date</th>
+                      <th className="px-4 py-3 font-medium text-muted">Shift</th>
+                      <th className="px-4 py-3 font-medium text-muted">Shortage</th>
+                      <th className="px-4 py-3 font-medium text-muted">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {understaffedSlots.map((slot, i) => (
+                      <tr key={`${slot.date}-${slot.shift_id}-${i}`} className="border-b border-border last:border-0">
+                        <td className="px-4 py-3 text-foreground">{slot.roster_title}</td>
+                        <td className="px-4 py-3 text-foreground">{slot.date}</td>
+                        <td className="px-4 py-3 text-foreground">
+                          <span className="rounded bg-surface px-1.5 py-0.5 font-mono text-xs font-medium">
+                            {slot.shift_key}
+                          </span>
+                          <span className="ml-2">{slot.shift_name}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                            {slot.min_required - slot.assigned_count}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Button size="sm" variant="secondary" onClick={() => prefillFromSlot(slot)}>
+                            Log Overtime
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-muted">No understaffed shifts found in published rosters.</p>
+          )}
+        </div>
+      )}
 
       {/* Filter */}
       <div className="mt-6 flex items-center gap-2">
