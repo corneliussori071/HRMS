@@ -3,6 +3,8 @@ export const PERMISSIONS = [
   "manage_users",
   "users_page",
   "leave_settings",
+  "create_roster",
+  "create_overtime",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -12,6 +14,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   manage_users: "Manage Users",
   users_page: "Users Page",
   leave_settings: "Leave Settings",
+  create_roster: "Create Roster",
+  create_overtime: "Create Overtime",
 };
 
 export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
@@ -19,6 +23,8 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   manage_users: "Create, edit, and delete user accounts",
   users_page: "View the Users page in navigation",
   leave_settings: "Access and configure leave settings",
+  create_roster: "Create and manage shift rosters",
+  create_overtime: "Create overtime requests from shift management",
 };
 
 export interface UserPermission {

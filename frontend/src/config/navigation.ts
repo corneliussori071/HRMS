@@ -19,6 +19,10 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/overtime",
   },
   {
+    label: "Shift Management",
+    href: "/shift-management",
+  },
+  {
     label: "Users",
     href: "/admin/users",
     requiredPermission: "users_page",
