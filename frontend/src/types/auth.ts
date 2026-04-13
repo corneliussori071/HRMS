@@ -30,6 +30,8 @@ export interface UserProfile {
   tax_id: string | null;
   status: AccountStatus;
   shift_id: string | null;
+  hours_per_week: number;
+  days_per_week: number;
   created_at: string;
   updated_at: string;
 }

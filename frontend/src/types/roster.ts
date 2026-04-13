@@ -10,6 +10,7 @@ export interface Roster {
   allow_self_scheduling: boolean;
   min_staff_per_shift: number;
   max_staff_per_shift: number;
+  completion_date: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -61,6 +62,13 @@ export interface UnderstaffedSlot {
   min_required: number;
 }
 
+export interface GenerationConfig {
+  minRestBetweenShiftsMinutes: number;
+  maxHoursPerDay: number;
+  shiftsPerDay: number;
+  maxIterations?: number;
+}
+
 export interface GenerationInput {
   shifts: GenerationShift[];
   staff: GenerationStaffMember[];
@@ -68,6 +76,7 @@ export interface GenerationInput {
   endDate: string;
   minStaffPerShift: number;
   maxStaffPerShift: number;
+  config: GenerationConfig;
 }
 
 export interface GenerationShift {
@@ -84,9 +93,20 @@ export interface GenerationStaffMember {
   id: string;
   full_name: string;
   rank_name: string | null;
+  hoursPerWeek: number;
+}
+
+export interface ScheduleViolation {
+  type: "under_hours" | "over_hours" | "insufficient_rest" | "over_daily_hours" | "understaffed";
+  staffId: string | null;
+  staffName: string | null;
+  date: string | null;
+  shiftId: string | null;
+  message: string;
 }
 
 export interface GenerationResult {
   assignments: Record<string, Record<string, string | null>>;
   understaffed: UnderstaffedSlot[];
+  violations: ScheduleViolation[];
 }

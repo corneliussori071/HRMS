@@ -11,16 +11,19 @@ export const createRosterSchema = z
     start_date: z.string().date("Invalid start date (expected YYYY-MM-DD)"),
     end_date: z.string().date("Invalid end date (expected YYYY-MM-DD)"),
     allow_self_scheduling: z.boolean().default(false),
+    completion_date: z.string().date("Invalid completion date").nullable().optional(),
     min_staff_per_shift: z
       .number()
       .int()
       .min(1, "Minimum staff must be at least 1")
-      .max(100, "Minimum staff cannot exceed 100"),
+      .max(100, "Minimum staff cannot exceed 100")
+      .default(1),
     max_staff_per_shift: z
       .number()
       .int()
       .min(1, "Maximum staff must be at least 1")
-      .max(100, "Maximum staff cannot exceed 100"),
+      .max(100, "Maximum staff cannot exceed 100")
+      .default(99),
     shift_ids: z
       .array(z.string().uuid("Invalid shift ID"))
       .min(1, "At least one shift must be selected"),
@@ -31,6 +34,24 @@ export const createRosterSchema = z
       z.string(),
       z.record(z.string(), z.string().uuid().nullable())
     ),
+    shift_configs: z
+      .array(
+        z.object({
+          shift_id: z.string().uuid(),
+          date: z.string().date().nullable(),
+          required_count: z.number().int().min(0).max(100),
+        })
+      )
+      .optional(),
+    rank_configs: z
+      .array(
+        z.object({
+          shift_id: z.string().uuid(),
+          rank_id: z.string().uuid(),
+          max_count: z.number().int().min(0).max(100),
+        })
+      )
+      .optional(),
   })
   .refine((data) => data.end_date >= data.start_date, {
     message: "End date must be on or after start date",
@@ -50,6 +71,7 @@ export const updateRosterSchema = z.object({
     .optional(),
   status: z.enum(["draft", "published", "archived"]).optional(),
   allow_self_scheduling: z.boolean().optional(),
+  completion_date: z.string().date("Invalid completion date").nullable().optional(),
   min_staff_per_shift: z.number().int().min(1).max(100).optional(),
   max_staff_per_shift: z.number().int().min(1).max(100).optional(),
 });
