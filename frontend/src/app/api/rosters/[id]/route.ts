@@ -29,7 +29,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   const { data: roster, error } = await supabase
     .from("rosters")
     .select(
-      "id, title, department_id, start_date, end_date, status, allow_self_scheduling, min_staff_per_shift, max_staff_per_shift, created_by, created_at, updated_at, departments(id, name)"
+      "id, title, department_id, start_date, end_date, status, allow_self_scheduling, min_staff_per_shift, max_staff_per_shift, completion_date, created_by, created_at, updated_at, departments(id, name)"
     )
     .eq("id", id)
     .single();
@@ -40,6 +40,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     { data: rosterShifts },
     { data: rosterStaff },
     { data: assignments },
+    { data: shiftConfigs },
+    { data: rankConfigs },
   ] = await Promise.all([
     supabase
       .from("roster_shifts")
@@ -47,13 +49,21 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       .eq("roster_id", id),
     supabase
       .from("roster_staff")
-      .select("user_id, is_included, profiles(id, full_name, ranks(name))")
+      .select("user_id, is_included, profiles(id, full_name, rank_id, pay_type, hours_per_week, days_per_week, ranks(name))")
       .eq("roster_id", id),
     supabase
       .from("roster_assignments")
       .select("id, user_id, date, shift_id, is_manual_override")
       .eq("roster_id", id)
       .order("date", { ascending: true }),
+    supabase
+      .from("roster_shift_configs")
+      .select("shift_id, date, required_count")
+      .eq("roster_id", id),
+    supabase
+      .from("roster_rank_configs")
+      .select("shift_id, rank_id, max_count")
+      .eq("roster_id", id),
   ]);
 
   return successResponse({
@@ -61,6 +71,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     roster_shifts: rosterShifts ?? [],
     roster_staff: rosterStaff ?? [],
     assignments: assignments ?? [],
+    shift_configs: shiftConfigs ?? [],
+    rank_configs: rankConfigs ?? [],
   });
 }
 
@@ -84,7 +96,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     .update(parsed.data)
     .eq("id", id)
     .select(
-      "id, title, department_id, start_date, end_date, status, allow_self_scheduling, min_staff_per_shift, max_staff_per_shift, created_by, created_at, updated_at"
+      "id, title, department_id, start_date, end_date, status, allow_self_scheduling, min_staff_per_shift, max_staff_per_shift, completion_date, created_by, created_at, updated_at"
     )
     .single();
 

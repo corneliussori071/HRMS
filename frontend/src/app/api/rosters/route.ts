@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("rosters")
     .select(
-      "id, title, department_id, start_date, end_date, status, allow_self_scheduling, min_staff_per_shift, max_staff_per_shift, created_by, created_at, updated_at, departments(id, name)"
+      "id, title, department_id, start_date, end_date, status, allow_self_scheduling, min_staff_per_shift, max_staff_per_shift, completion_date, created_by, created_at, updated_at, departments(id, name)"
     )
     .order("created_at", { ascending: false });
 
@@ -63,11 +63,14 @@ export async function POST(request: NextRequest) {
     start_date,
     end_date,
     allow_self_scheduling,
+    completion_date,
     min_staff_per_shift,
     max_staff_per_shift,
     shift_ids,
     staff_ids,
     assignments,
+    shift_configs,
+    rank_configs,
   } = parsed.data;
 
   const supabase = await createClient();
@@ -80,12 +83,13 @@ export async function POST(request: NextRequest) {
       start_date,
       end_date,
       allow_self_scheduling,
+      completion_date: completion_date ?? null,
       min_staff_per_shift,
       max_staff_per_shift,
       created_by: auth.userId,
     })
     .select(
-      "id, title, department_id, start_date, end_date, status, allow_self_scheduling, min_staff_per_shift, max_staff_per_shift, created_by, created_at, updated_at"
+      "id, title, department_id, start_date, end_date, status, allow_self_scheduling, min_staff_per_shift, max_staff_per_shift, completion_date, created_by, created_at, updated_at"
     )
     .single();
 
@@ -152,6 +156,54 @@ export async function POST(request: NextRequest) {
         await supabase.from("rosters").delete().eq("id", roster.id);
         return errorResponse("Failed to save roster assignments", 500);
       }
+    }
+  }
+
+  // Save shift configs (per-shift staffing requirements), deduplicated by shift+date
+  if (shift_configs && shift_configs.length > 0) {
+    const scMap = new Map<string, { shift_id: string; date: string | null; required_count: number }>();
+    for (const sc of shift_configs) {
+      const key = `${sc.shift_id}-${sc.date ?? "__null__"}`;
+      scMap.set(key, sc);
+    }
+    const shiftConfigRows = Array.from(scMap.values()).map((sc) => {
+      const row: { roster_id: string; shift_id: string; required_count: number; date?: string } = {
+        roster_id: roster.id,
+        shift_id: sc.shift_id,
+        required_count: sc.required_count,
+      };
+      if (sc.date !== null) {
+        row.date = sc.date;
+      }
+      return row;
+    });
+    const { error: scError } = await supabase
+      .from("roster_shift_configs")
+      .insert(shiftConfigRows);
+    if (scError) {
+      await supabase.from("rosters").delete().eq("id", roster.id);
+      return errorResponse(`Failed to save shift configs: ${scError.message}`, 500);
+    }
+  }
+
+  // Save rank configs (per-shift rank capacity limits), deduplicated by shift+rank
+  if (rank_configs && rank_configs.length > 0) {
+    const rcMap = new Map<string, { shift_id: string; rank_id: string; max_count: number }>();
+    for (const rc of rank_configs) {
+      rcMap.set(`${rc.shift_id}-${rc.rank_id}`, rc);
+    }
+    const rankConfigRows = Array.from(rcMap.values()).map((rc) => ({
+      roster_id: roster.id,
+      shift_id: rc.shift_id,
+      rank_id: rc.rank_id,
+      max_count: rc.max_count,
+    }));
+    const { error: rcError } = await supabase
+      .from("roster_rank_configs")
+      .insert(rankConfigRows);
+    if (rcError) {
+      await supabase.from("rosters").delete().eq("id", roster.id);
+      return errorResponse(`Failed to save rank configs: ${rcError.message}`, 500);
     }
   }
 

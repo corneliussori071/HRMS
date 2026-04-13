@@ -138,20 +138,148 @@ async function handleSelfSchedule(
 
   if (!rosterShift) return errorResponse("Shift is not available in this roster", 400);
 
-  // Check that the shift isn't at max capacity for this date
-  const { count } = await supabase
+  // Fetch user profile for rank and hours/days limits
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("rank_id, pay_type, hours_per_week, days_per_week")
+    .eq("id", auth.userId)
+    .single();
+
+  if (!profile) return errorResponse("User profile not found", 400);
+
+  // Fetch shift details for hours calculation
+  const { data: shift } = await supabase
+    .from("shifts")
+    .select("start_time, end_time, break_minutes")
+    .eq("id", data.shift_id)
+    .single();
+
+  if (!shift) return errorResponse("Shift not found", 400);
+
+  // Fetch all existing assignments for this roster on this date (for capacity checks)
+  const { data: dateAssignments } = await supabase
     .from("roster_assignments")
-    .select("id", { count: "exact", head: true })
+    .select("user_id, shift_id")
     .eq("roster_id", rosterId)
     .eq("date", data.date)
-    .eq("shift_id", data.shift_id)
     .neq("user_id", auth.userId);
 
-  if (count !== null && count >= roster.max_staff_per_shift) {
-    return errorResponse("This shift is already at maximum capacity for this date", 400);
+  const othersOnDate = dateAssignments ?? [];
+
+  // 1. Check shift staff capacity from roster_shift_configs
+  const { data: shiftConfigs } = await supabase
+    .from("roster_shift_configs")
+    .select("required_count, date")
+    .eq("roster_id", rosterId)
+    .eq("shift_id", data.shift_id);
+
+  if (shiftConfigs && shiftConfigs.length > 0) {
+    const dateSpecific = shiftConfigs.find((c) => c.date === data.date);
+    const global = shiftConfigs.find((c) => c.date === null);
+    const effectiveConfig = dateSpecific ?? global;
+
+    if (effectiveConfig) {
+      const currentCount = othersOnDate.filter((a) => a.shift_id === data.shift_id).length;
+      if (currentCount >= effectiveConfig.required_count) {
+        return errorResponse(
+          `Shift is full (${effectiveConfig.required_count} staff required)`,
+          400
+        );
+      }
+    }
   }
 
-  // Upsert the assignment
+  // 2. Check rank capacity from roster_rank_configs
+  if (profile.rank_id) {
+    const { data: rankConfig } = await supabase
+      .from("roster_rank_configs")
+      .select("max_count")
+      .eq("roster_id", rosterId)
+      .eq("shift_id", data.shift_id)
+      .eq("rank_id", profile.rank_id)
+      .single();
+
+    if (rankConfig) {
+      // Count others with the same rank on this shift+date
+      const othersOnShift = othersOnDate.filter((a) => a.shift_id === data.shift_id);
+      const otherUserIds = othersOnShift.map((a) => a.user_id);
+
+      if (otherUserIds.length > 0) {
+        const { count: sameRankCount } = await supabase
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .in("id", otherUserIds)
+          .eq("rank_id", profile.rank_id);
+
+        if (sameRankCount !== null && sameRankCount >= rankConfig.max_count) {
+          return errorResponse(
+            `Rank capacity reached (${rankConfig.max_count} max for this rank)`,
+            400
+          );
+        }
+      }
+    }
+  }
+
+  // 3. Check hours/days limits (rolling 7-day window)
+  const targetDate = new Date(data.date + "T00:00:00");
+  const windowDates: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(targetDate);
+    d.setDate(d.getDate() - i);
+    windowDates.push(d.toISOString().slice(0, 10));
+  }
+
+  const { data: windowAssignments } = await supabase
+    .from("roster_assignments")
+    .select("date, shift_id, shifts(start_time, end_time, break_minutes)")
+    .eq("user_id", auth.userId)
+    .in("date", windowDates)
+    .not("shift_id", "is", null);
+
+  interface WindowAssignment {
+    date: string;
+    shift_id: string;
+    shifts: { start_time: string; end_time: string; break_minutes: number } | null;
+  }
+  const windowRows = (windowAssignments ?? []) as unknown as WindowAssignment[];
+
+  if (profile.pay_type === "hourly") {
+    const proposedHours = computeShiftHours(shift.start_time, shift.end_time, shift.break_minutes);
+    let existingHours = 0;
+    let shiftCount = 0;
+    for (const wa of windowRows) {
+      if (wa.date === data.date) continue; // skip current date (will be replaced)
+      if (wa.shifts) {
+        existingHours += computeShiftHours(wa.shifts.start_time, wa.shifts.end_time, wa.shifts.break_minutes);
+        shiftCount += 1;
+      }
+    }
+    const grandTotal = existingHours + proposedHours;
+    const maxHours = profile.hours_per_week ?? 40;
+    if (grandTotal > maxHours) {
+      return errorResponse(
+        `Would exceed weekly hours limit (${existingHours.toFixed(1)}h worked in ${shiftCount} shift${shiftCount !== 1 ? "s" : ""} + ${proposedHours.toFixed(1)}h proposed = ${grandTotal.toFixed(1)}h / ${maxHours}h)`,
+        400
+      );
+    }
+  } else {
+    const daysWorked = new Set(
+      windowRows
+        .filter((a) => a.date !== data.date)
+        .map((a) => a.date)
+    );
+    daysWorked.add(data.date);
+    const maxDays = profile.days_per_week ?? 5;
+    if (daysWorked.size > maxDays) {
+      return errorResponse(
+        `Would exceed weekly days limit (${daysWorked.size} / ${maxDays} days)`,
+        400
+      );
+    }
+  }
+
+  // All checks passed — upsert the assignment
   const { error } = await supabase
     .from("roster_assignments")
     .upsert(
@@ -168,4 +296,17 @@ async function handleSelfSchedule(
   if (error) return errorResponse("Failed to save assignment", 500);
 
   return successResponse({ updated: 1 });
+}
+
+/**
+ * Compute net working hours of a shift. Handles overnight shifts.
+ */
+function computeShiftHours(startTime: string, endTime: string, breakMinutes: number): number {
+  const sParts = startTime.slice(0, 5).split(":");
+  const eParts = endTime.slice(0, 5).split(":");
+  const startMin = (parseInt(sParts[0], 10) || 0) * 60 + (parseInt(sParts[1], 10) || 0);
+  let endMin = (parseInt(eParts[0], 10) || 0) * 60 + (parseInt(eParts[1], 10) || 0);
+  if (endMin <= startMin) endMin += 1440;
+  const netMinutes = (endMin - startMin) - (breakMinutes || 0);
+  return Math.max(0, netMinutes / 60);
 }
