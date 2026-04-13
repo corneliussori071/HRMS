@@ -41,6 +41,8 @@ interface UserDetail extends UserRow {
   employment_type: string;
   pay_type: string;
   pay_rate: number;
+  hours_per_week: number;
+  days_per_week: number;
   bank_name: string | null;
   bank_account_number: string | null;
   tax_id: string | null;
@@ -108,6 +110,8 @@ export default function UsersPage() {
   const [formEmploymentType, setFormEmploymentType] = useState("full_time");
   const [formPayType, setFormPayType] = useState("monthly");
   const [formPayRate, setFormPayRate] = useState("");
+  const [formHoursPerWeek, setFormHoursPerWeek] = useState("40");
+  const [formDaysPerWeek, setFormDaysPerWeek] = useState("5");
   const [formBankName, setFormBankName] = useState("");
   const [formBankAccount, setFormBankAccount] = useState("");
   const [formTaxId, setFormTaxId] = useState("");
@@ -177,6 +181,7 @@ export default function UsersPage() {
     setFormEmergencyName(""); setFormEmergencyPhone("");
     setFormDoe(""); setFormEmploymentType("full_time");
     setFormPayType("monthly"); setFormPayRate("");
+    setFormHoursPerWeek("40"); setFormDaysPerWeek("5");
     setFormBankName(""); setFormBankAccount(""); setFormTaxId("");
     setFormStatus("active"); setError("");
   }
@@ -210,6 +215,8 @@ export default function UsersPage() {
         setFormEmploymentType(d.employment_type || "full_time");
         setFormPayType(d.pay_type || "monthly");
         setFormPayRate(d.pay_rate ? String(d.pay_rate) : "");
+        setFormHoursPerWeek(d.hours_per_week != null ? String(d.hours_per_week) : "40");
+        setFormDaysPerWeek(d.days_per_week != null ? String(d.days_per_week) : "5");
         setFormBankName(d.bank_name || "");
         setFormBankAccount(d.bank_account_number || "");
         setFormTaxId(d.tax_id || "");
@@ -306,6 +313,8 @@ export default function UsersPage() {
       employment_type: formEmploymentType,
       pay_type: formPayType,
       pay_rate: formPayRate ? parseFloat(formPayRate) : 0,
+      hours_per_week: formHoursPerWeek ? parseFloat(formHoursPerWeek) : 40,
+      days_per_week: formDaysPerWeek ? parseInt(formDaysPerWeek, 10) : 5,
       bank_name: formBankName || null,
       bank_account_number: formBankAccount || null,
       tax_id: formTaxId || null,
@@ -350,6 +359,8 @@ export default function UsersPage() {
       employment_type: formEmploymentType,
       pay_type: formPayType,
       pay_rate: formPayRate ? parseFloat(formPayRate) : 0,
+      hours_per_week: formHoursPerWeek ? parseFloat(formHoursPerWeek) : 40,
+      days_per_week: formDaysPerWeek ? parseInt(formDaysPerWeek, 10) : 5,
       bank_name: formBankName || null,
       bank_account_number: formBankAccount || null,
       tax_id: formTaxId || null,
@@ -509,6 +520,11 @@ export default function UsersPage() {
           <legend className="text-sm font-semibold text-foreground">Payment Information</legend>
           <FormSelect label="Pay Type" value={formPayType} onChange={(e) => setFormPayType(e.target.value)} options={PAY_TYPE_OPTIONS} />
           <FormInput label={formPayType === "hourly" ? "Pay Rate (per hour)" : "Pay Rate (monthly)"} type="number" value={formPayRate} onChange={(e) => setFormPayRate(e.target.value)} placeholder="0.00" />
+          {formPayType === "hourly" ? (
+            <FormInput label="Hours per Week" type="number" value={formHoursPerWeek} onChange={(e) => setFormHoursPerWeek(e.target.value)} placeholder="40" />
+          ) : (
+            <FormInput label="Days per Week" type="number" value={formDaysPerWeek} onChange={(e) => setFormDaysPerWeek(e.target.value)} placeholder="5" />
+          )}
           <FormInput label="Bank Name" value={formBankName} onChange={(e) => setFormBankName(e.target.value)} />
           <FormInput label="Bank Account Number" value={formBankAccount} onChange={(e) => setFormBankAccount(e.target.value)} />
           <FormInput label="Tax ID" value={formTaxId} onChange={(e) => setFormTaxId(e.target.value)} />
